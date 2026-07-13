@@ -1,79 +1,95 @@
 # E3D OpenSCAD Studio
 
-An AI-powered [OpenSCAD](https://openscad.org/) editor with live 3D preview, running
-entirely in the browser. You describe what you want in a chat; the AI writes the
-OpenSCAD code; it renders to a 3D model in real time. Every chat is a project, and
-any project can be forked to branch a new idea.
+An AI-powered [OpenSCAD](https://openscad.org/) editor with live 3D preview. You
+describe what you want in a chat; an AI agent writes the OpenSCAD code; it renders
+to a 3D model in real time. Every chat is a project, and any project can be forked
+to branch a new idea.
 
 ## Features
 
-- **AI-first workflow** — the main way you interact is the chat. The AI writes and
-  edits the OpenSCAD program for you, always returning the full source so it can be
-  rendered directly.
-- **Live 3D preview** — OpenSCAD compiles to an STL in a Web Worker (via
-  `openscad-wasm`, real OpenSCAD compiled to WebAssembly), rendered with three.js.
-  Renders are ~100 ms for typical models and update as you type.
+- **AI-first workflow** — the main way you interact is the chat. A typed agent tool
+  (`writeOpenscad`) replaces the project source with a complete program every turn,
+  so the model is always renderable.
+- **Live 3D preview** — OpenSCAD compiles to an STL in a Web Worker (real OpenSCAD
+  compiled to WebAssembly, Manifold backend), rendered with three.js. Renders update
+  as you type.
+- **Colors & export** — `color()` renders in the live preview (per-face colors via
+  OpenSCAD's colored OFF export). Download models as binary STL or as 3MF with
+  colors preserved as materials (written client-side) for multi-material slicing.
 - **Editable code** — a CodeMirror editor with OpenSCAD syntax highlighting. Edit the
   code by hand and the preview re-renders automatically.
-- **Projects = chats** — each project holds its own conversation history and code,
-  saved in your browser's local storage.
-- **Fork** — clone any project (code + history) into a new one that remembers its
-  ancestor, so you can explore variations without losing the original.
-- **100% browser-based** — no backend. Statically deployable to any host.
+- **Projects = chats** — each project holds its conversation history, code, and
+  workspace files (SVG/DXF/STL/`.scad` libraries), persisted in Postgres.
+- **Fork** — clone any project (code + history + files) into a new one that remembers
+  its ancestor.
 
-## How it works
+## Architecture
 
 ```
-You (chat)  ──▶  AI (OpenAI-compatible API)  ──▶  OpenSCAD source
-                                                       │
-                              CodeMirror editor ◀───────┤
-                                                       ▼
-                          openscad-wasm worker  ──▶  binary STL  ──▶  three.js preview
+Browser                              Server (Next.js App Router)
+───────                              ───────────────────────────
+Chat (useChat + AI Elements)  ──▶    POST /api/chat
+                                       └─ ToolLoopAgent (AI SDK)
+                                          ├─ model: openai/gpt-5.6-terra (AI Gateway)
+                                          ├─ tool: writeOpenscad (zod-typed)
+                                          └─ onFinish → persist chat + code (Drizzle/Postgres)
+writeOpenscad tool part  ──▶  editor + preview
+CodeMirror editor        ──▶  PATCH /api/projects/[id]
+openscad-wasm worker     ──▶  binary STL  ──▶  three.js preview
 ```
 
-- The AI is reached through any **OpenAI-compatible `/chat/completions` endpoint**
-  (OpenAI, Inception Labs, a local server, …). Configure the base URL, API key, and
-  model in **Settings**. The key is stored only in your browser's local storage and
-  sent directly to the endpoint you configure.
-- OpenSCAD runs as WebAssembly in a Web Worker, so compilation never blocks the UI. A
-  fresh instance is created per render because the wasm build runs `main()` once per
-  instance.
+- **AI**: [AI SDK](https://ai-sdk.dev) `ToolLoopAgent` behind an API route, using the
+  [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) (`openai/gpt-5.6-terra`).
+  No API keys in the browser — deployments on Vercel authenticate via OIDC.
+- **Chat UI**: [AI Elements](https://elements.ai-sdk.dev) (shadcn/ui-based components)
+  with `useChat` streaming.
+- **Persistence**: Postgres via Drizzle ORM (`projects`, `messages` as AI SDK
+  UIMessages, `workspace_files`).
+- **Rendering**: OpenSCAD wasm (vendored snapshot with the Manifold geometry backend)
+  in a Web Worker; wasm + font bundle served from `public/openscad/`.
 
 ## Getting started
 
+Requirements: Node 20+, Postgres running locally.
+
 ```bash
 npm install
-npm run dev      # start the dev server (Vite)
+createdb e3d_openscad_studio
+
+cp .env.example .env.local
+# Set POSTGRES_URL (e.g. postgres://<you>@localhost:5432/e3d_openscad_studio)
+# Set AI_GATEWAY_API_KEY (create one at https://vercel.com/~/ai-gateway/api-keys)
+
+npm run db:migrate   # apply schema
+npm run dev          # http://localhost:3000
 ```
 
-Open the printed URL, then click **Settings** and enter:
-
-- **API base URL** — e.g. `https://api.openai.com/v1`
-- **API key** — your key for that endpoint
-- **Model** — e.g. `gpt-4o-mini`
-
-Now describe a model in the chat ("a hexagonal phone stand", "a 20 mm gear with 12
+Describe a model in the chat ("a hexagonal phone stand", "a 20 mm gear with 12
 teeth") and watch it render.
 
-### Build
+### Scripts
 
 ```bash
-npm run build    # type-check + production build to dist/
-npm run preview  # preview the production build
+npm run dev          # dev server (Turbopack)
+npm run build        # type-check + production build
+npm run start        # serve production build
+npm run typecheck    # tsc --noEmit
+npm run db:generate  # generate migration from schema changes
+npm run db:migrate   # apply migrations
 ```
+
+## Deploying to Vercel
+
+1. Add a Postgres database (e.g. Neon) from the Vercel Marketplace — it provisions
+   `POSTGRES_URL` automatically.
+2. AI Gateway auth is automatic on Vercel (OIDC); no key needed.
+3. Run migrations against the production database: `POSTGRES_URL=... npm run db:migrate`.
 
 ## Tech stack
 
-- **Vite + React + TypeScript**
-- **openscad-wasm** — OpenSCAD compiled to WebAssembly
+- **Next.js 16 (App Router) + React 19 + TypeScript**
+- **AI SDK v7** (`ToolLoopAgent`, `useChat`) + **AI Elements** + **shadcn/ui** + Tailwind v4
+- **Drizzle ORM + Postgres**
+- **openscad-wasm** — OpenSCAD compiled to WebAssembly (Manifold backend)
 - **three.js** — STL rendering (STLLoader + OrbitControls)
-- **CodeMirror 6** — code editor with a custom OpenSCAD language mode
-
-## Notes & limitations (v0.1)
-
-- Persistence is local to the browser (localStorage). Clearing site data removes your
-  projects. Cloud sync / accounts are not implemented yet.
-- The API key lives in the browser and is sent directly to your configured endpoint —
-  appropriate for personal / self-hosted use. For a shared deployment you'd add a
-  server-side proxy.
-- Responses are non-streaming; the AI must return the complete program each turn.
+- **CodeMirror 6** — editor with a custom OpenSCAD language mode
