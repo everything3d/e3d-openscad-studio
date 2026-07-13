@@ -7,8 +7,9 @@ import { cn } from "@/lib/utils";
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
-  title: 'E3D OpenSCAD Studio',
-  description: 'AI-powered OpenSCAD editor with live 3D preview.',
+  title: 'E3D Studio — AI OpenSCAD by Everything 3D',
+  description:
+    'AI-powered OpenSCAD editor with live 3D preview, by Everything 3D. Describe a part, watch it render, export STL/3MF.',
 }
 
 export default function RootLayout({

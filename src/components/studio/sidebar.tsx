@@ -30,7 +30,8 @@ export function Sidebar({
     <aside className="flex w-64 shrink-0 flex-col border-r bg-sidebar">
       <div className="flex items-center justify-between gap-2 border-b p-3">
         <div className="flex items-center gap-2 text-sm font-semibold">
-          <span className="text-primary">◈</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/e3d-mark-white.png" alt="Everything 3D" className="size-5" />
           <span>E3D Studio</span>
         </div>
         <Button size="sm" onClick={onNew} title="New project">
