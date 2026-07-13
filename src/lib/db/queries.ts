@@ -1,10 +1,10 @@
-import { asc, count, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, sql } from 'drizzle-orm'
 import { generateId, type UIMessage } from 'ai'
 import { db } from '.'
 import { messages, projects, workspaceFiles } from './schema'
 import { DEFAULT_CODE, type FullProject, type ProjectSummary, type WorkspaceFile } from '../types'
 
-export async function listProjects(): Promise<ProjectSummary[]> {
+export async function listProjects(userId: string): Promise<ProjectSummary[]> {
   const rows = await db
     .select({
       id: projects.id,
@@ -15,14 +15,18 @@ export async function listProjects(): Promise<ProjectSummary[]> {
     })
     .from(projects)
     .leftJoin(messages, eq(messages.projectId, projects.id))
+    .where(eq(projects.userId, userId))
     .groupBy(projects.id)
     .orderBy(desc(projects.updatedAt))
 
   return rows.map((r) => ({ ...r, updatedAt: r.updatedAt.getTime() }))
 }
 
-export async function getProject(id: string): Promise<FullProject | null> {
-  const [project] = await db.select().from(projects).where(eq(projects.id, id))
+export async function getProject(id: string, userId: string): Promise<FullProject | null> {
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(and(eq(projects.id, id), eq(projects.userId, userId)))
   if (!project) return null
 
   const files = await db
@@ -65,11 +69,12 @@ export async function getProjectMessages(id: string): Promise<UIMessage[]> {
   )
 }
 
-export async function createProject(name?: string): Promise<FullProject> {
+export async function createProject(userId: string, name?: string): Promise<FullProject> {
   const [row] = await db
     .insert(projects)
     .values({
       id: generateId(),
+      userId,
       name: name || 'Untitled project',
       code: DEFAULT_CODE,
     })
@@ -86,8 +91,8 @@ export async function createProject(name?: string): Promise<FullProject> {
   }
 }
 
-export async function forkProject(sourceId: string): Promise<FullProject | null> {
-  const source = await getProject(sourceId)
+export async function forkProject(sourceId: string, userId: string): Promise<FullProject | null> {
+  const source = await getProject(sourceId, userId)
   if (!source) return null
   const sourceMessages = await getProjectMessages(sourceId)
 
@@ -95,6 +100,7 @@ export async function forkProject(sourceId: string): Promise<FullProject | null>
   await db.transaction(async (tx) => {
     await tx.insert(projects).values({
       id,
+      userId,
       name: `${source.name} (fork)`,
       code: source.code,
       forkedFrom: source.id,
@@ -123,25 +129,25 @@ export async function forkProject(sourceId: string): Promise<FullProject | null>
     }
   })
 
-  return getProject(id)
+  return getProject(id, userId)
 }
 
-export async function renameProject(id: string, name: string): Promise<void> {
+export async function renameProject(id: string, userId: string, name: string): Promise<void> {
   await db
     .update(projects)
     .set({ name, updatedAt: sql`now()` })
-    .where(eq(projects.id, id))
+    .where(and(eq(projects.id, id), eq(projects.userId, userId)))
 }
 
-export async function updateProjectCode(id: string, code: string): Promise<void> {
+export async function updateProjectCode(id: string, userId: string, code: string): Promise<void> {
   await db
     .update(projects)
     .set({ code, updatedAt: sql`now()` })
-    .where(eq(projects.id, id))
+    .where(and(eq(projects.id, id), eq(projects.userId, userId)))
 }
 
-export async function deleteProject(id: string): Promise<void> {
-  await db.delete(projects).where(eq(projects.id, id))
+export async function deleteProject(id: string, userId: string): Promise<void> {
+  await db.delete(projects).where(and(eq(projects.id, id), eq(projects.userId, userId)))
 }
 
 /** Replace the full workspace file list for a project. */

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { UserButton } from '@clerk/nextjs'
 import { cn } from '@/lib/utils'
 import { useRenderer } from '@/lib/openscad/useRenderer'
 import { meshTo3MF } from '@/lib/openscad/threemf'
@@ -206,6 +207,9 @@ export function Studio({ initialProjects }: { initialProjects: ProjectSummary[] 
               forked
             </span>
           )}
+          <div className="ml-auto flex items-center">
+            <UserButton />
+          </div>
         </header>
 
         <div className="flex min-h-0 flex-1">

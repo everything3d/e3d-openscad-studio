@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { Geist } from "next/font/google";
+import { ClerkProvider } from '@clerk/nextjs'
 import { cn } from "@/lib/utils";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
@@ -14,8 +15,10 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={cn("dark", "font-sans", geist.variable)}>
-      <body className="antialiased">{children}</body>
-    </html>
+    <ClerkProvider>
+      <html lang="en" className={cn("dark", "font-sans", geist.variable)}>
+        <body className="antialiased">{children}</body>
+      </html>
+    </ClerkProvider>
   )
 }

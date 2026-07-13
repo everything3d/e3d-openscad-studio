@@ -14,3 +14,11 @@ next-env.d.ts
 .env*.local
 .gstack/
 tsconfig.tsbuildinfo
+.vercel
+.env*
+
+# clerk configuration (can include secrets)
+/.clerk/
+
+# clerk keyless dev keys
+.clerk/

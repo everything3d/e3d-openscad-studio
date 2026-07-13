@@ -16,6 +16,7 @@
   "dependencies": {
     "@ai-sdk/react": "^4.0.23",
     "@base-ui/react": "^1.6.0",
+    "@clerk/nextjs": "^7.5.17",
     "@codemirror/commands": "^6.6.0",
     "@codemirror/language": "^6.10.2",
     "@codemirror/state": "^6.4.1",

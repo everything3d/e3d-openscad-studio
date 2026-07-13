@@ -15,6 +15,8 @@ import {
  */
 export const projects = pgTable('projects', {
   id: text('id').primaryKey(),
+  /** Clerk user id owning this project. */
+  userId: text('user_id').notNull().default(''),
   name: text('name').notNull(),
   code: text('code').notNull(),
   forkedFrom: text('forked_from'),

@@ -1,4 +1,5 @@
 import { createAgentUIStreamResponse, generateId, validateUIMessages, type UIMessage } from 'ai'
+import { auth } from '@clerk/nextjs/server'
 import { createStudioAgent, studioTools, type StudioUIMessage } from '@/lib/agents/studio-agent'
 import { getProject, saveChat } from '@/lib/db/queries'
 
@@ -22,6 +23,11 @@ function latestCode(messages: StudioUIMessage[]): string | null {
 }
 
 export async function POST(req: Request) {
+  const { userId } = await auth()
+  if (!userId) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const { messages: rawMessages, projectId } = (await req.json()) as {
     messages: unknown[]
     projectId?: string
@@ -30,7 +36,7 @@ export async function POST(req: Request) {
   if (!projectId) {
     return Response.json({ error: 'projectId is required' }, { status: 400 })
   }
-  const project = await getProject(projectId)
+  const project = await getProject(projectId, userId)
   if (!project) {
     return Response.json({ error: 'Project not found' }, { status: 404 })
   }
