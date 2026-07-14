@@ -5,7 +5,14 @@
 // ("mesh is not closed" etc.) and is much faster.
 import { unzipSync } from 'fflate'
 import OpenSCAD from './vendor/openscad.js'
-import { BUNDLED_FAMILIES, extractFontSpecs, needsGoogleFetch, type FontSpec } from './fonts'
+import {
+  BUNDLED_FAMILIES,
+  extractCatalogFontSpecs,
+  extractFontSpecs,
+  needsGoogleFetch,
+  specKey,
+  type FontSpec,
+} from './fonts'
 
 // Served as static assets from public/openscad (fetched once per worker,
 // then cached in module scope for subsequent renders).
@@ -24,14 +31,42 @@ let logBuffer: string[] = []
 // every render; transient network errors are NOT cached and will retry.
 const googleFonts = new Map<string, Uint8Array | null>()
 
+// Lowercased Google Fonts family names, for scanning code string literals.
+let catalogPromise: Promise<Set<string>> | null = null
+
+function loadFontCatalog(): Promise<Set<string>> {
+  catalogPromise ??= (async () => {
+    const res = await fetch(`${self.location.origin}/api/fonts/catalog`)
+    if (!res.ok) throw new Error(`Font catalog unavailable (${res.status})`)
+    const names = (await res.json()) as string[]
+    return new Set(names.map((n) => n.toLowerCase()))
+  })()
+  catalogPromise.catch(() => {
+    catalogPromise = null
+  })
+  return catalogPromise
+}
+
 async function loadGoogleFonts(
   code: string,
 ): Promise<{ name: string; data: Uint8Array }[]> {
-  const wanted = extractFontSpecs(code).filter(needsGoogleFetch)
+  // Explicit `font = "..."` specs always count; the catalog scan also finds
+  // font names that reach text() through variables or module parameters.
+  const specs = new Map<string, FontSpec>()
+  for (const spec of extractFontSpecs(code)) specs.set(specKey(spec), spec)
+  try {
+    const catalog = await loadFontCatalog()
+    for (const spec of extractCatalogFontSpecs(code, catalog)) {
+      specs.set(specKey(spec), spec)
+    }
+  } catch {
+    // Catalog fetch failed — explicit font= specs still resolve.
+  }
+  const wanted = [...specs.values()].filter(needsGoogleFetch)
   const loaded: { name: string; data: Uint8Array }[] = []
   await Promise.all(
     wanted.map(async (spec: FontSpec) => {
-      const key = `${spec.family}|${spec.style}`.toLowerCase()
+      const key = specKey(spec)
       if (!googleFonts.has(key)) {
         try {
           const params = new URLSearchParams({ family: spec.family })

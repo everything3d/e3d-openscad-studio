@@ -4,7 +4,7 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 // require a signed-in user. /api/fonts only proxies Google Fonts bytes
 // (no user data) and stays public so responses CDN-cache cleanly.
 const isProtectedRoute = createRouteMatcher(['/studio(.*)', '/api(.*)'])
-const isPublicRoute = createRouteMatcher(['/api/fonts'])
+const isPublicRoute = createRouteMatcher(['/api/fonts(.*)'])
 
 export default clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req) && !isPublicRoute(req)) {

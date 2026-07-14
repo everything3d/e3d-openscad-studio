@@ -150,6 +150,19 @@ export function ChatPanel({ projectId, initialMessages, onCode, onTurnFinish }: 
                           className="max-h-48 max-w-full rounded-md border object-contain"
                         />
                       ) : null
+                    case 'tool-searchFonts':
+                      return (
+                        <Tool key={part.toolCallId} className="my-0">
+                          <ToolHeader type={part.type} state={part.state} title="Search fonts" />
+                          <ToolContent>
+                            <div className="p-3 text-xs text-muted-foreground">
+                              {part.state === 'output-available'
+                                ? `${part.output.total} matching font${part.output.total === 1 ? '' : 's'}: ${part.output.fonts.slice(0, 8).join(', ')}${part.output.total > 8 ? ', …' : ''}`
+                                : 'Searching the font catalog…'}
+                            </div>
+                          </ToolContent>
+                        </Tool>
+                      )
                     case 'tool-writeOpenscad':
                       return (
                         <Tool key={part.toolCallId} className="my-0">

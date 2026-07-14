@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server'
+import { loadCatalog } from '@/lib/google-fonts-catalog'
 
 /**
  * On-demand Google Fonts proxy for the OpenSCAD renderer.
@@ -51,33 +52,6 @@ function fetchCss(family: string, variant: string | null): Promise<Response> {
   const url = `https://fonts.googleapis.com/css2?family=${family.replace(/ /g, '+')}${variant ?? ''}`
   // A legacy UA makes the CSS API return truetype urls instead of woff2.
   return fetch(url, { headers: { 'User-Agent': 'curl/8.4.0' } })
-}
-
-// The css2 API is case-sensitive ("sour gummy" 400s, "Sour Gummy" works),
-// and users hand-type font names into code. Google's catalog lets us resolve
-// any casing to the canonical family name. Cached per function instance.
-let catalogPromise: Promise<Map<string, string>> | null = null
-
-function loadCatalog(): Promise<Map<string, string>> {
-  catalogPromise ??= (async () => {
-    const res = await fetch('https://fonts.google.com/metadata/fonts', {
-      headers: { Accept: 'application/json' },
-    })
-    if (!res.ok) throw new Error(`Catalog fetch failed (${res.status})`)
-    // Some deployments prefix this endpoint with the )]}' XSSI guard.
-    const text = (await res.text()).replace(/^\)\]\}'/, '')
-    const meta = JSON.parse(text) as { familyMetadataList: { family: string }[] }
-    const map = new Map<string, string>()
-    for (const f of meta.familyMetadataList) {
-      map.set(f.family.toLowerCase().replace(/\s+/g, ' '), f.family)
-    }
-    return map
-  })()
-  // On failure, clear so the next request retries instead of caching the error.
-  catalogPromise.catch(() => {
-    catalogPromise = null
-  })
-  return catalogPromise
 }
 
 /** Canonical catalog casing for a family name, or null if not on Google Fonts. */

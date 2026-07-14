@@ -94,6 +94,19 @@ export interface FontSpec {
   style: string
 }
 
+/** Parse a fontconfig-ish font string ("Family[:style=Style]") into a spec. */
+export function parseFontSpec(raw: string): FontSpec | null {
+  const [familyPart, ...rest] = raw.split(':')
+  const family = familyPart.trim().replace(/\s+/g, ' ')
+  if (!family) return null
+  const style = rest.join(':').match(/style\s*=\s*([^:]+)/i)?.[1].trim() ?? ''
+  return { family, style }
+}
+
+export function specKey(spec: FontSpec): string {
+  return `${spec.family}|${spec.style}`.toLowerCase()
+}
+
 /**
  * Extract every `font = "Family[:style=Style]"` spec from OpenSCAD source.
  * Deduplicated case-insensitively.
@@ -101,12 +114,25 @@ export interface FontSpec {
 export function extractFontSpecs(code: string): FontSpec[] {
   const specs = new Map<string, FontSpec>()
   for (const m of code.matchAll(/\bfont\s*=\s*"([^"]+)"/g)) {
-    const raw = m[1].trim()
-    const [familyPart, ...rest] = raw.split(':')
-    const family = familyPart.trim()
-    if (!family) continue
-    const style = rest.join(':').match(/style\s*=\s*([^:]+)/i)?.[1].trim() ?? ''
-    specs.set(`${family}|${style}`.toLowerCase(), { family, style })
+    const spec = parseFontSpec(m[1])
+    if (spec) specs.set(specKey(spec), spec)
+  }
+  return [...specs.values()]
+}
+
+/**
+ * Every string literal in the source that names a Google Fonts family
+ * (per `catalog`, a set of lowercased family names). This catches fonts
+ * that reach text() through variables or module parameters, where a
+ * literal `font = "..."` never appears in the code.
+ */
+export function extractCatalogFontSpecs(code: string, catalog: Set<string>): FontSpec[] {
+  const specs = new Map<string, FontSpec>()
+  for (const m of code.matchAll(/"((?:[^"\\]|\\.)*)"/g)) {
+    const spec = parseFontSpec(m[1])
+    if (spec && catalog.has(spec.family.toLowerCase())) {
+      specs.set(specKey(spec), spec)
+    }
   }
   return [...specs.values()]
 }
