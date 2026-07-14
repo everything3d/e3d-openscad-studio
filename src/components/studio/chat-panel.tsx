@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
-import { BoxIcon } from 'lucide-react'
+import { BoxIcon, ImagePlusIcon } from 'lucide-react'
 import {
   Conversation,
   ConversationContent,
@@ -13,12 +13,18 @@ import {
 import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message'
 import {
   PromptInput,
+  PromptInputAttachment,
+  PromptInputAttachments,
   PromptInputBody,
+  PromptInputButton,
   PromptInputFooter,
+  PromptInputHeader,
   PromptInputSubmit,
   PromptInputTextarea,
+  usePromptInputAttachments,
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
+import { downscaleImageDataUrl } from '@/lib/images'
 import { Tool, ToolContent, ToolHeader } from '@/components/ai-elements/tool'
 import { CodeBlock } from '@/components/ai-elements/code-block'
 import type { StudioUIMessage } from '@/lib/agents/studio-agent'
@@ -51,6 +57,20 @@ function latestWrite(
   return null
 }
 
+/** Opens the composer's file picker. Must render inside PromptInput. */
+function AttachImagesButton() {
+  const attachments = usePromptInputAttachments()
+  return (
+    <PromptInputButton
+      tooltip="Attach images (or paste / drop)"
+      aria-label="Attach images"
+      onClick={() => attachments.openFileDialog()}
+    >
+      <ImagePlusIcon className="size-4" />
+    </PromptInputButton>
+  )
+}
+
 export function ChatPanel({ projectId, initialMessages, onCode, onTurnFinish }: Props) {
   const transport = useMemo(
     () =>
@@ -80,9 +100,26 @@ export function ChatPanel({ projectId, initialMessages, onCode, onTurnFinish }: 
     }
   }, [messages, onCode])
 
-  const handleSubmit = (message: PromptInputMessage) => {
-    if (!message.text.trim() || status === 'streaming' || status === 'submitted') return
-    void sendMessage({ text: message.text })
+  const [attachError, setAttachError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!attachError) return
+    const t = setTimeout(() => setAttachError(null), 4000)
+    return () => clearTimeout(t)
+  }, [attachError])
+
+  const handleSubmit = async (message: PromptInputMessage) => {
+    const text = message.text.trim()
+    if ((!text && message.files.length === 0) || status === 'streaming' || status === 'submitted')
+      return
+    // Shrink attached images before sending: the full history (including
+    // these data URLs) is re-sent every turn and persisted to the DB.
+    const files = await Promise.all(
+      message.files.map(async (file) => ({
+        ...file,
+        ...(await downscaleImageDataUrl(file.url, file.mediaType)),
+      })),
+    )
+    void sendMessage(text ? { text, files } : { files })
   }
 
   return (
@@ -93,7 +130,7 @@ export function ChatPanel({ projectId, initialMessages, onCode, onTurnFinish }: 
             <ConversationEmptyState
               icon={<BoxIcon className="size-8" />}
               title="Describe what you want to build"
-              description='The AI writes the OpenSCAD code and it renders live on the right. Try "a hexagonal phone stand" or "a 20 mm gear with 12 teeth".'
+              description='The AI writes the OpenSCAD code and it renders live on the right. Try "a hexagonal phone stand", or attach photos or sketches of a part to recreate.'
             />
           )}
           {messages.map((message) => (
@@ -103,6 +140,16 @@ export function ChatPanel({ projectId, initialMessages, onCode, onTurnFinish }: 
                   switch (part.type) {
                     case 'text':
                       return <MessageResponse key={i}>{part.text}</MessageResponse>
+                    case 'file':
+                      return part.mediaType?.startsWith('image/') ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          key={i}
+                          src={part.url}
+                          alt={part.filename ?? 'Attached image'}
+                          className="max-h-48 max-w-full rounded-md border object-contain"
+                        />
+                      ) : null
                     case 'tool-writeOpenscad':
                       return (
                         <Tool key={part.toolCallId} className="my-0">
@@ -140,14 +187,30 @@ export function ChatPanel({ projectId, initialMessages, onCode, onTurnFinish }: 
       </Conversation>
 
       <div className="border-t p-3">
-        <PromptInput onSubmit={handleSubmit}>
+        <PromptInput
+          onSubmit={handleSubmit}
+          accept="image/*"
+          multiple
+          maxFiles={6}
+          maxFileSize={20 * 1024 * 1024}
+          onError={(err) => setAttachError(err.message)}
+        >
+          <PromptInputHeader>
+            <PromptInputAttachments>
+              {(attachment) => <PromptInputAttachment data={attachment} />}
+            </PromptInputAttachments>
+          </PromptInputHeader>
           <PromptInputBody>
             <PromptInputTextarea placeholder="Ask the AI to build or change the model…" />
           </PromptInputBody>
-          <PromptInputFooter className="justify-end">
+          <PromptInputFooter className="justify-between">
+            <AttachImagesButton />
             <PromptInputSubmit status={status} />
           </PromptInputFooter>
         </PromptInput>
+        {attachError && (
+          <p className="mt-1.5 text-xs text-destructive">{attachError}</p>
+        )}
       </div>
     </div>
   )

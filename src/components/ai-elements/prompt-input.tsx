@@ -65,6 +65,7 @@ import type {
 } from "react";
 import {
   Children,
+  Fragment,
   createContext,
   useCallback,
   useContext,
@@ -406,6 +407,76 @@ export const usePromptInputReferencedSources = () => {
     );
   }
   return ctx;
+};
+
+export type PromptInputAttachmentProps = HTMLAttributes<HTMLDivElement> & {
+  data: FileUIPart & { id: string };
+};
+
+export const PromptInputAttachment = ({
+  data,
+  className,
+  ...props
+}: PromptInputAttachmentProps) => {
+  const attachments = usePromptInputAttachments();
+
+  return (
+    <div
+      className={cn("group relative size-14 rounded-md border", className)}
+      {...props}
+    >
+      {data.mediaType?.startsWith("image/") && data.url ? (
+        // Attachment thumbnails are transient blob/data URLs, not app assets.
+        // oxlint-disable-next-line @next/next(no-img-element)
+        <img
+          alt={data.filename || "attachment"}
+          className="size-full rounded-md object-cover"
+          src={data.url}
+        />
+      ) : (
+        <div className="flex size-full items-center justify-center text-muted-foreground">
+          <ImageIcon className="size-4" />
+        </div>
+      )}
+      <InputGroupButton
+        aria-label="Remove attachment"
+        className="-right-1.5 -top-1.5 absolute size-5 rounded-full border bg-background p-0 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        onClick={() => attachments.remove(data.id)}
+        size="icon-xs"
+        type="button"
+        variant="ghost"
+      >
+        <XIcon className="size-3" />
+      </InputGroupButton>
+    </div>
+  );
+};
+
+export type PromptInputAttachmentsProps = Omit<
+  HTMLAttributes<HTMLDivElement>,
+  "children"
+> & {
+  children: (attachment: FileUIPart & { id: string }) => ReactNode;
+};
+
+export const PromptInputAttachments = ({
+  children,
+  className,
+  ...props
+}: PromptInputAttachmentsProps) => {
+  const attachments = usePromptInputAttachments();
+
+  if (attachments.files.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={cn("flex flex-wrap gap-2 p-2 pb-0", className)} {...props}>
+      {attachments.files.map((file) => (
+        <Fragment key={file.id}>{children(file)}</Fragment>
+      ))}
+    </div>
+  );
 };
 
 type DropdownMenuItemSelectEvent = Parameters<
