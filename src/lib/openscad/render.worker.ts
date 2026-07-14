@@ -5,6 +5,7 @@
 // ("mesh is not closed" etc.) and is much faster.
 import { unzipSync } from 'fflate'
 import OpenSCAD from './vendor/openscad.js'
+import { extractFontSpecs, needsGoogleFetch, type FontSpec } from './fonts'
 
 // Served as static assets from public/openscad (fetched once per worker,
 // then cached in module scope for subsequent renders).
@@ -17,6 +18,44 @@ const fontsZipUrl = '/openscad/fonts.zip'
 let wasmBytes: ArrayBuffer | null = null
 let fontFiles: Record<string, Uint8Array> | null = null
 let logBuffer: string[] = []
+
+// Google Fonts fetched on demand, keyed by "family|style" (lowercased).
+// `null` marks a family the API said doesn't exist, so we don't re-ask
+// every render; transient network errors are NOT cached and will retry.
+const googleFonts = new Map<string, Uint8Array | null>()
+
+async function loadGoogleFonts(
+  code: string,
+): Promise<{ name: string; data: Uint8Array }[]> {
+  const wanted = extractFontSpecs(code).filter(needsGoogleFetch)
+  const loaded: { name: string; data: Uint8Array }[] = []
+  await Promise.all(
+    wanted.map(async (spec: FontSpec) => {
+      const key = `${spec.family}|${spec.style}`.toLowerCase()
+      if (!googleFonts.has(key)) {
+        try {
+          const params = new URLSearchParams({ family: spec.family })
+          if (spec.style) params.set('style', spec.style)
+          // Absolute URL: a root-relative path would break if the bundler
+          // ever serves this worker from a blob: URL.
+          const res = await fetch(`${self.location.origin}/api/fonts?${params}`)
+          if (res.ok) {
+            googleFonts.set(key, new Uint8Array(await res.arrayBuffer()))
+          } else if (res.status === 400 || res.status === 404) {
+            googleFonts.set(key, null)
+          }
+        } catch {
+          // Network hiccup — leave uncached so the next render retries.
+        }
+      }
+      const data = googleFonts.get(key)
+      if (data) {
+        loaded.push({ name: `gf-${key.replace(/[^a-z0-9]+/g, '-')}.ttf`, data })
+      }
+    }),
+  )
+  return loaded
+}
 
 interface RenderFile {
   name: string
@@ -64,6 +103,7 @@ async function render(
   format: ExportFormat,
 ): Promise<{ data: ArrayBuffer; log: string }> {
   logBuffer = []
+  const googleFontsPromise = loadGoogleFonts(code)
   if (!wasmBytes || !fontFiles) {
     const [wasm, fontsZip] = await Promise.all([
       fetchBinary(wasmUrl, 'OpenSCAD wasm'),
@@ -72,6 +112,7 @@ async function render(
     wasmBytes = wasm
     fontFiles = unzipSync(new Uint8Array(fontsZip))
   }
+  const extraFonts = await googleFontsPromise
   const instance = await OpenSCAD({
     noInitialRun: true,
     wasmBinary: wasmBytes,
@@ -88,6 +129,11 @@ async function render(
   fs.mkdir('/fonts')
   for (const [name, data] of Object.entries(fontFiles)) {
     fs.writeFile(`/fonts/${name}`, data)
+  }
+  // On-demand Google Fonts land in the same fontconfig dir; fontconfig
+  // registers them by the family name embedded in the file.
+  for (const f of extraFonts) {
+    fs.writeFile(`/fonts/${f.name}`, f.data)
   }
 
   // Workspace files live next to input.scad so `import("name.svg")` and
