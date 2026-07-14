@@ -5,7 +5,7 @@
 // ("mesh is not closed" etc.) and is much faster.
 import { unzipSync } from 'fflate'
 import OpenSCAD from './vendor/openscad.js'
-import { extractFontSpecs, needsGoogleFetch, type FontSpec } from './fonts'
+import { BUNDLED_FAMILIES, extractFontSpecs, needsGoogleFetch, type FontSpec } from './fonts'
 
 // Served as static assets from public/openscad (fetched once per worker,
 // then cached in module scope for subsequent renders).
@@ -51,6 +51,12 @@ async function loadGoogleFonts(
       const data = googleFonts.get(key)
       if (data) {
         loaded.push({ name: `gf-${key.replace(/[^a-z0-9]+/g, '-')}.ttf`, data })
+      } else if (!BUNDLED_FAMILIES.has(spec.family.toLowerCase())) {
+        // A bundled family missing only a style still renders (regular
+        // weight); an unknown family is worth a visible warning.
+        logBuffer.push(
+          `WARNING: Could not load font "${spec.family}" from Google Fonts; falling back to the default font.`,
+        )
       }
     }),
   )

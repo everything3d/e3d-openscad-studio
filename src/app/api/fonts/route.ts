@@ -53,6 +53,43 @@ function fetchCss(family: string, variant: string | null): Promise<Response> {
   return fetch(url, { headers: { 'User-Agent': 'curl/8.4.0' } })
 }
 
+// The css2 API is case-sensitive ("sour gummy" 400s, "Sour Gummy" works),
+// and users hand-type font names into code. Google's catalog lets us resolve
+// any casing to the canonical family name. Cached per function instance.
+let catalogPromise: Promise<Map<string, string>> | null = null
+
+function loadCatalog(): Promise<Map<string, string>> {
+  catalogPromise ??= (async () => {
+    const res = await fetch('https://fonts.google.com/metadata/fonts', {
+      headers: { Accept: 'application/json' },
+    })
+    if (!res.ok) throw new Error(`Catalog fetch failed (${res.status})`)
+    // Some deployments prefix this endpoint with the )]}' XSSI guard.
+    const text = (await res.text()).replace(/^\)\]\}'/, '')
+    const meta = JSON.parse(text) as { familyMetadataList: { family: string }[] }
+    const map = new Map<string, string>()
+    for (const f of meta.familyMetadataList) {
+      map.set(f.family.toLowerCase().replace(/\s+/g, ' '), f.family)
+    }
+    return map
+  })()
+  // On failure, clear so the next request retries instead of caching the error.
+  catalogPromise.catch(() => {
+    catalogPromise = null
+  })
+  return catalogPromise
+}
+
+/** Canonical catalog casing for a family name, or null if not on Google Fonts. */
+async function canonicalFamily(family: string): Promise<string | null> {
+  try {
+    const catalog = await loadCatalog()
+    return catalog.get(family.toLowerCase().replace(/\s+/g, ' ')) ?? null
+  } catch {
+    return null
+  }
+}
+
 export async function GET(req: NextRequest) {
   const family = (req.nextUrl.searchParams.get('family') ?? '').trim()
   const style = (req.nextUrl.searchParams.get('style') ?? '').trim()
@@ -62,10 +99,17 @@ export async function GET(req: NextRequest) {
 
   const variant = variantQuery(style)
   let res = await fetchCss(family, variant)
-  if (!res.ok && variant) {
-    // The family exists but not in that weight/italic — fall back to regular
-    // and let fontconfig do its best-effort style matching.
-    res = await fetchCss(family, null)
+  if (!res.ok) {
+    // Wrong casing? Resolve against the catalog ("sour gummy" → "Sour Gummy").
+    const canonical = await canonicalFamily(family)
+    if (canonical && canonical !== family) {
+      res = await fetchCss(canonical, variant)
+      if (!res.ok && variant) res = await fetchCss(canonical, null)
+    } else if (variant) {
+      // The family exists but not in that weight/italic — fall back to
+      // regular and let fontconfig do its best-effort style matching.
+      res = await fetchCss(family, null)
+    }
   }
   if (!res.ok) {
     return Response.json({ error: `Unknown font family "${family}"` }, { status: 404 })
