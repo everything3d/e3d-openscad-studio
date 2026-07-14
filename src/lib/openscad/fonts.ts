@@ -37,6 +37,7 @@ export const BUNDLED_FAMILIES = new Set(
     'Noto Sans Tibetan',
     'Noto Sans Tifinagh',
     'Baby Donuts',
+    'Spicy Sale',
     'Abril Fatface',
     'Alfa Slab One',
     'Allura',

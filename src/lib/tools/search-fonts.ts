@@ -5,6 +5,7 @@ import { loadCatalogEntries, type CatalogEntry } from '@/lib/google-fonts-catalo
 /** Non-Google faces bundled with the renderer, so searches also find them. */
 const BUNDLED_EXTRAS: CatalogEntry[] = [
   { family: 'Baby Donuts', category: 'Display' },
+  { family: 'Spicy Sale', category: 'Display' },
   { family: 'Liberation Sans', category: 'Sans Serif' },
   { family: 'Liberation Serif', category: 'Serif' },
   { family: 'Liberation Mono', category: 'Monospace' },
