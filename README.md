@@ -15,7 +15,8 @@ to branch a new idea.
   as you type.
 - **Colors & export** — `color()` renders in the live preview (per-face colors via
   OpenSCAD's colored OFF export). Download models as binary STL or as 3MF with
-  colors preserved as materials (written client-side) for multi-material slicing.
+  per-face colors preserved as a 3MF color group (written client-side), which
+  Bambu Studio, Orca, and PrusaSlicer map to filaments for multi-material printing.
 - **Editable code** — a CodeMirror editor with OpenSCAD syntax highlighting. Edit the
   code by hand and the preview re-renders automatically.
 - **Projects = chats** — each project holds its conversation history, code, and

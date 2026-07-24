@@ -1,57 +1,77 @@
 import { zipSync, strToU8 } from 'fflate'
 import type { ParsedMesh } from './off'
 
+const MATERIAL_NS = 'http://schemas.microsoft.com/3dmanufacturing/material/2015/02'
+
 /**
  * Build a minimal, spec-compliant 3MF file from a parsed mesh.
  *
  * The vendored OpenSCAD wasm was compiled without lib3mf, so we write the
  * format ourselves: 3MF is a zip containing an OPC rels file and one XML
- * model. Per-face colors (from OpenSCAD `color()`) are preserved as
- * basematerials referenced per triangle, which slicers like PrusaSlicer,
- * Bambu Studio, and Cura understand for multi-material printing.
+ * model.
+ *
+ * Per-face colors (from OpenSCAD `color()`) are written with the 3MF Materials
+ * extension as an `<m:colorgroup>` referenced per triangle. This is the "face
+ * coloring" form that slicers actually read: Bambu Studio (2.5+) and Orca show
+ * their color-mapping dialog for it and map each color to a filament slot.
+ * `<basematerials>` — the other way to attach color — is only ever honoured at
+ * the *object* level by those slicers, so a per-triangle `pid` into a
+ * basematerials group silently collapses to a single-color model on import.
+ *
+ * Two details matter for Bambu Studio's importer:
+ *  - every triangle must carry a color, or color parsing is skipped entirely.
+ *    `parseOFF` guarantees this by filling uncolored faces with
+ *    DEFAULT_FACE_COLOR whenever any face in the file is colored.
+ *  - p1/p2/p3 are written equal so the face reads as flat, not as a gradient.
  */
 export function meshTo3MF(mesh: ParsedMesh): Uint8Array {
   const triCount = mesh.triangles.length / 3
 
-  // Collect unique face colors → material indices.
-  const materials: string[] = []
-  const materialIndex = new Map<string, number>()
-  const triMaterial = new Uint32Array(triCount)
+  // Collect unique face colors → color-group indices.
+  const colors: string[] = []
+  const colorIndex = new Map<string, number>()
+  const triColor = new Uint32Array(triCount)
   if (mesh.faceColors) {
     for (let t = 0; t < triCount; t++) {
       const r = mesh.faceColors[t * 3]
       const g = mesh.faceColors[t * 3 + 1]
       const b = mesh.faceColors[t * 3 + 2]
+      // sRGB with explicit opaque alpha, the form other exporters emit.
       const hex =
         '#' +
-        [r, g, b].map((c) => c.toString(16).padStart(2, '0').toUpperCase()).join('')
-      let mi = materialIndex.get(hex)
-      if (mi === undefined) {
-        mi = materials.length
-        materials.push(hex)
-        materialIndex.set(hex, mi)
+        [r, g, b, 255]
+          .map((c) => c.toString(16).padStart(2, '0').toUpperCase())
+          .join('')
+      let ci = colorIndex.get(hex)
+      if (ci === undefined) {
+        ci = colors.length
+        colors.push(hex)
+        colorIndex.set(hex, ci)
       }
-      triMaterial[t] = mi
+      triColor[t] = ci
     }
   }
+  const hasColors = colors.length > 0
 
   const xml: string[] = []
   xml.push('<?xml version="1.0" encoding="UTF-8"?>')
   xml.push(
     '<model unit="millimeter" xml:lang="en-US" ' +
+      (hasColors ? `xmlns:m="${MATERIAL_NS}" ` : '') +
       'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">',
   )
   xml.push(' <resources>')
 
-  const hasColors = materials.length > 0
   if (hasColors) {
-    xml.push('  <basematerials id="1">')
-    for (let m = 0; m < materials.length; m++) {
-      xml.push(`   <base name="Color ${m + 1}" displaycolor="${materials[m]}" />`)
+    xml.push('  <m:colorgroup id="1">')
+    for (const hex of colors) {
+      xml.push(`   <m:color color="${hex}" />`)
     }
-    xml.push('  </basematerials>')
+    xml.push('  </m:colorgroup>')
   }
 
+  // An object holding triangles with properties must declare pid/pindex as the
+  // fallback for any triangle that omits them.
   xml.push(
     hasColors
       ? '  <object id="2" type="model" pid="1" pindex="0">'
@@ -72,11 +92,15 @@ export function meshTo3MF(mesh: ParsedMesh): Uint8Array {
     const a = tr[t * 3]
     const b = tr[t * 3 + 1]
     const c = tr[t * 3 + 2]
-    xml.push(
-      hasColors
-        ? `     <triangle v1="${a}" v2="${b}" v3="${c}" pid="1" p1="${triMaterial[t]}" />`
-        : `     <triangle v1="${a}" v2="${b}" v3="${c}" />`,
-    )
+    if (hasColors) {
+      const ci = triColor[t]
+      xml.push(
+        `     <triangle v1="${a}" v2="${b}" v3="${c}" ` +
+          `pid="1" p1="${ci}" p2="${ci}" p3="${ci}" />`,
+      )
+    } else {
+      xml.push(`     <triangle v1="${a}" v2="${b}" v3="${c}" />`)
+    }
   }
   xml.push('    </triangles>')
 
