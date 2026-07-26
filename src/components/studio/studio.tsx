@@ -5,7 +5,12 @@ import { UserButton } from '@clerk/nextjs'
 import { cn } from '@/lib/utils'
 import { useRenderer } from '@/lib/openscad/useRenderer'
 import { meshTo3MF } from '@/lib/openscad/threemf'
-import type { FullProject, ProjectSummary, WorkspaceFile } from '@/lib/types'
+import {
+  PLACEHOLDER_PROJECT_NAME,
+  type FullProject,
+  type ProjectSummary,
+  type WorkspaceFile,
+} from '@/lib/types'
 import type { StudioUIMessage } from '@/lib/agents/studio-agent'
 import { Sidebar } from './sidebar'
 import { ChatPanel } from './chat-panel'
@@ -35,6 +40,22 @@ export function Studio({ initialProjects }: { initialProjects: ProjectSummary[] 
     if (res.ok) setProject(await res.json())
   }, [])
 
+  /**
+   * Name a fresh project from its opening message. The server infers the name
+   * with a small model call and ignores projects that are already named.
+   */
+  const nameProject = useCallback(async (id: string, text: string) => {
+    const res = await fetch(`/api/projects/${id}/name`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+    if (!res.ok) return
+    const { name } = (await res.json()) as { name: string }
+    setProject((p) => (p && p.id === id ? { ...p, name } : p))
+    setProjects((list) => list.map((p) => (p.id === id ? { ...p, name } : p)))
+  }, [])
+
   // ---- bootstrap: open the active project, create one if none exist -------
   const bootedRef = useRef(false)
   useEffect(() => {
@@ -45,11 +66,8 @@ export function Studio({ initialProjects }: { initialProjects: ProjectSummary[] 
     if (!bootedRef.current && projects.length === 0) {
       bootedRef.current = true
       void (async () => {
-        const res = await fetch('/api/projects', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: 'My first model' }),
-        })
+        // Unnamed on purpose: the first message names it.
+        const res = await fetch('/api/projects', { method: 'POST' })
         const p: FullProject = await res.json()
         setProjects([
           {
@@ -221,6 +239,11 @@ export function Studio({ initialProjects }: { initialProjects: ProjectSummary[] 
                 initialMessages={project.messages}
                 onCode={handleAgentCode}
                 onTurnFinish={() => void refreshList()}
+                onFirstMessage={(text) => {
+                  if (project.name === PLACEHOLDER_PROJECT_NAME) {
+                    void nameProject(project.id, text)
+                  }
+                }}
               />
             ) : (
               <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">

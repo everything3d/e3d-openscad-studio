@@ -36,6 +36,8 @@ interface Props {
   onCode: (code: string) => void
   /** Called after a chat turn finishes (server has persisted everything). */
   onTurnFinish: () => void
+  /** Called with the text of the very first message sent in this project. */
+  onFirstMessage: (text: string) => void
 }
 
 /** The latest writeOpenscad call whose input has fully arrived. */
@@ -71,7 +73,13 @@ function AttachImagesButton() {
   )
 }
 
-export function ChatPanel({ projectId, initialMessages, onCode, onTurnFinish }: Props) {
+export function ChatPanel({
+  projectId,
+  initialMessages,
+  onCode,
+  onTurnFinish,
+  onFirstMessage,
+}: Props) {
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -119,6 +127,9 @@ export function ChatPanel({ projectId, initialMessages, onCode, onTurnFinish }: 
         ...(await downscaleImageDataUrl(file.url, file.mediaType)),
       })),
     )
+    // Opening message: let the parent name the project from it, in parallel
+    // with the modeling turn.
+    if (messages.length === 0 && text) onFirstMessage(text)
     void sendMessage(text ? { text, files } : { files })
   }
 

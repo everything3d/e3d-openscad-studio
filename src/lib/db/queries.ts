@@ -2,7 +2,13 @@ import { and, asc, count, desc, eq, sql } from 'drizzle-orm'
 import { generateId, type UIMessage } from 'ai'
 import { db } from '.'
 import { messages, projects, workspaceFiles } from './schema'
-import { DEFAULT_CODE, type FullProject, type ProjectSummary, type WorkspaceFile } from '../types'
+import {
+  DEFAULT_CODE,
+  PLACEHOLDER_PROJECT_NAME,
+  type FullProject,
+  type ProjectSummary,
+  type WorkspaceFile,
+} from '../types'
 
 export async function listProjects(userId: string): Promise<ProjectSummary[]> {
   const rows = await db
@@ -75,7 +81,7 @@ export async function createProject(userId: string, name?: string): Promise<Full
     .values({
       id: generateId(),
       userId,
-      name: name || 'Untitled project',
+      name: name || PLACEHOLDER_PROJECT_NAME,
       code: DEFAULT_CODE,
     })
     .returning()
@@ -137,6 +143,30 @@ export async function renameProject(id: string, userId: string, name: string): P
     .update(projects)
     .set({ name, updatedAt: sql`now()` })
     .where(and(eq(projects.id, id), eq(projects.userId, userId)))
+}
+
+/**
+ * Apply an inferred name, but only while the project is still unnamed — so a
+ * name the user typed (or an earlier auto-name) is never clobbered. Returns
+ * whether the name was actually applied.
+ */
+export async function autoNameProject(
+  id: string,
+  userId: string,
+  name: string,
+): Promise<boolean> {
+  const rows = await db
+    .update(projects)
+    .set({ name })
+    .where(
+      and(
+        eq(projects.id, id),
+        eq(projects.userId, userId),
+        eq(projects.name, PLACEHOLDER_PROJECT_NAME),
+      ),
+    )
+    .returning({ id: projects.id })
+  return rows.length > 0
 }
 
 export async function updateProjectCode(id: string, userId: string, code: string): Promise<void> {
@@ -202,7 +232,9 @@ export async function saveChat({
     const patch: Record<string, unknown> = { updatedAt: sql`now()` }
     if (code !== null) patch.code = code
 
-    // Auto-name untitled projects from the first user message.
+    // Fallback naming: normally the project is named by the model as soon as
+    // the first message is sent (POST /api/projects/[id]/name). If that call
+    // never landed, fall back to a truncation of the first user message.
     const firstUserText = uiMessages
       .find((m) => m.role === 'user')
       ?.parts.find((p) => p.type === 'text')
@@ -211,7 +243,7 @@ export async function saveChat({
         .select({ name: projects.name })
         .from(projects)
         .where(eq(projects.id, projectId))
-      if (project?.name === 'Untitled project') {
+      if (project?.name === PLACEHOLDER_PROJECT_NAME) {
         patch.name = firstUserText.text.slice(0, 40)
       }
     }

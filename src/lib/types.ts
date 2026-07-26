@@ -30,6 +30,13 @@ export interface FullProject {
   updatedAt: number
 }
 
+/**
+ * Name a project gets before anything is known about it. While a project still
+ * carries this name it is considered unnamed, and the first chat message can
+ * auto-name it (see `generateProjectName`).
+ */
+export const PLACEHOLDER_PROJECT_NAME = 'Untitled project'
+
 export const DEFAULT_CODE = `// Welcome to E3D OpenSCAD Studio.
 // Describe what you want to build in the chat and the AI will write
 // the OpenSCAD code here. You can also edit it directly.
