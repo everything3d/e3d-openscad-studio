@@ -95,7 +95,7 @@ export function Sidebar({
       </div>
 
       <div className="border-t p-3 text-xs text-muted-foreground">
-        Projects are chats. Fork any one to branch a new idea.
+        Forks keep the current model and files, then start with a fresh chat.
       </div>
     </aside>
   )

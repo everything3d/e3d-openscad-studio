@@ -70,8 +70,8 @@ async function loadProjectSnapshot(
 }
 
 /**
- * Materialize a complete project copy. Local forks and cross-account imports
- * both pass through here, keeping message/file copy behavior in one place.
+ * Materialize a project copy. Local forks and cross-account imports both pass
+ * through here, keeping their model/file/message copy behavior in one place.
  */
 async function materializeProjectCopy(
   tx: DbTransaction,
@@ -80,11 +80,13 @@ async function materializeProjectCopy(
     userId,
     name,
     sharedFrom = null,
+    copyMessages = true,
   }: {
     snapshot: ProjectSnapshot
     userId: string
     name: string
     sharedFrom?: string | null
+    copyMessages?: boolean
   },
 ): Promise<string> {
   const id = generateId()
@@ -118,7 +120,7 @@ async function materializeProjectCopy(
     await tx.insert(projects).values(values)
   }
 
-  if (snapshot.messages.length) {
+  if (copyMessages && snapshot.messages.length) {
     await tx.insert(messages).values(
       snapshot.messages.map((message) => ({
         id: message.id,
@@ -239,6 +241,11 @@ export async function forkProject(sourceId: string, userId: string): Promise<Ful
       snapshot,
       userId,
       name: `${snapshot.name} (fork)`,
+      // A fork branches the current model, files, and settings. Starting its
+      // conversation fresh prevents inherited history from multiplying after
+      // several generations of forks; the live source is already supplied to
+      // the agent on every turn.
+      copyMessages: false,
     })
   })
 
@@ -386,6 +393,24 @@ export async function updateProjectCode(id: string, userId: string, code: string
 
 export async function deleteProject(id: string, userId: string): Promise<void> {
   await db.delete(projects).where(and(eq(projects.id, id), eq(projects.userId, userId)))
+}
+
+/** Delete only a project's conversation, preserving its source and files. */
+export async function clearProjectMessages(id: string, userId: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [project] = await tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.id, id), eq(projects.userId, userId)))
+    if (!project) return false
+
+    await tx.delete(messages).where(eq(messages.projectId, id))
+    await tx
+      .update(projects)
+      .set({ updatedAt: sql`now()` })
+      .where(eq(projects.id, id))
+    return true
+  })
 }
 
 /** Replace the full workspace file list for a project. */

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
-import { BoxIcon, ImagePlusIcon } from 'lucide-react'
+import { BoxIcon, ImagePlusIcon, MessageSquareXIcon } from 'lucide-react'
 import {
   Conversation,
   ConversationContent,
@@ -92,7 +92,7 @@ export function ChatPanel({
     [projectId],
   )
 
-  const { messages, sendMessage, status, error } = useChat<StudioUIMessage>({
+  const { messages, setMessages, sendMessage, status, error } = useChat<StudioUIMessage>({
     id: projectId,
     messages: initialMessages,
     transport,
@@ -117,6 +117,34 @@ export function ChatPanel({
     const t = setTimeout(() => setAttachError(null), 4000)
     return () => clearTimeout(t)
   }, [attachError])
+
+  const [clearError, setClearError] = useState<string | null>(null)
+  const [isClearing, setIsClearing] = useState(false)
+
+  const handleClear = async () => {
+    if (
+      messages.length === 0 ||
+      !window.confirm(
+        'Clear this chat history? The current OpenSCAD model and workspace files will be kept.',
+      )
+    ) {
+      return
+    }
+
+    setIsClearing(true)
+    setClearError(null)
+    try {
+      const res = await fetch(`/api/projects/${projectId}/messages`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Clear chat request failed')
+      appliedCallId.current = null
+      setMessages([])
+      onTurnFinish()
+    } catch {
+      setClearError('Could not clear the chat. Please try again.')
+    } finally {
+      setIsClearing(false)
+    }
+  }
 
   const handleSubmit = async (message: PromptInputMessage) => {
     const text = message.text.trim()
@@ -246,13 +274,30 @@ export function ChatPanel({
             <PromptInputTextarea placeholder="Ask the AI to build or change the model…" />
           </PromptInputBody>
           <PromptInputFooter className="justify-between">
-            <AttachImagesButton />
+            <div className="flex items-center gap-1">
+              <AttachImagesButton />
+              <PromptInputButton
+                tooltip="Clear chat history"
+                aria-label="Clear chat history"
+                disabled={
+                  messages.length === 0 ||
+                  isClearing ||
+                  status === 'streaming' ||
+                  status === 'submitted'
+                }
+                onClick={() => void handleClear()}
+              >
+                <MessageSquareXIcon className="size-4" />
+                <span>Clear</span>
+              </PromptInputButton>
+            </div>
             <PromptInputSubmit status={status} />
           </PromptInputFooter>
         </PromptInput>
         {attachError && (
           <p className="mt-1.5 text-xs text-destructive">{attachError}</p>
         )}
+        {clearError && <p className="mt-1.5 text-xs text-destructive">{clearError}</p>}
       </div>
     </div>
   )
