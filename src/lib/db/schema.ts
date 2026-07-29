@@ -10,9 +10,9 @@ import {
 } from 'drizzle-orm/pg-core'
 
 /**
- * A project *is* a chat: conversation history, the current OpenSCAD source,
- * and the workspace files it imports. Forking clones a project into a new
- * one that remembers its ancestor.
+ * A project contains conversation history, the current OpenSCAD source, and
+ * the workspace files it imports. Forking branches the source and files into
+ * a new project with a fresh chat that remembers its ancestor.
  */
 export const projects = pgTable(
   'projects',
