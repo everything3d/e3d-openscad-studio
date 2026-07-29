@@ -31,6 +31,8 @@ import type { StudioUIMessage } from '@/lib/agents/studio-agent'
 
 interface Props {
   projectId: string
+  /** The live editor content, sent with each message so the agent never works from stale code. */
+  code: string
   initialMessages: StudioUIMessage[]
   /** Called when the agent produces a new complete OpenSCAD program. */
   onCode: (code: string) => void
@@ -75,6 +77,7 @@ function AttachImagesButton() {
 
 export function ChatPanel({
   projectId,
+  code,
   initialMessages,
   onCode,
   onTurnFinish,
@@ -130,7 +133,9 @@ export function ChatPanel({
     // Opening message: let the parent name the project from it, in parallel
     // with the modeling turn.
     if (messages.length === 0 && text) onFirstMessage(text)
-    void sendMessage(text ? { text, files } : { files })
+    // Ship the live editor content with the request: manual edits are only
+    // persisted after a debounce, so the server's copy may be stale.
+    void sendMessage(text ? { text, files } : { files }, { body: { code } })
   }
 
   return (
@@ -161,6 +166,19 @@ export function ChatPanel({
                           className="max-h-48 max-w-full rounded-md border object-contain"
                         />
                       ) : null
+                    case 'tool-readOpenscad':
+                      return (
+                        <Tool key={part.toolCallId} className="my-0">
+                          <ToolHeader type={part.type} state={part.state} title="Read model code" />
+                          <ToolContent>
+                            <div className="p-3 text-xs text-muted-foreground">
+                              {part.state === 'output-available'
+                                ? 'Read the current OpenSCAD source.'
+                                : 'Reading the current OpenSCAD source…'}
+                            </div>
+                          </ToolContent>
+                        </Tool>
+                      )
                     case 'tool-searchFonts':
                       return (
                         <Tool key={part.toolCallId} className="my-0">
