@@ -5,7 +5,7 @@ import { getProject, saveChat } from '@/lib/db/queries'
 
 export const maxDuration = 120
 
-/** The most recent complete writeOpenscad code in the conversation, if any. */
+/** The most recent complete writeOpenscad code in the given messages, if any. */
 function latestCode(messages: StudioUIMessage[]): string | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const parts = messages[i].parts
@@ -28,9 +28,11 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { messages: rawMessages, projectId } = (await req.json()) as {
+  const { messages: rawMessages, projectId, code: liveCode } = (await req.json()) as {
     messages: unknown[]
     projectId?: string
+    /** The live editor content at send time — fresher than the DB row. */
+    code?: string
   }
 
   if (!projectId) {
@@ -46,8 +48,12 @@ export async function POST(req: Request) {
     tools: studioTools,
   })) as StudioUIMessage[]
 
+  // Prefer the live editor content over the DB row: manual edits are only
+  // persisted after a debounce, so the row can be stale at send time.
+  const currentCode = typeof liveCode === 'string' ? liveCode : project.code
+
   const agent = createStudioAgent(
-    project.code,
+    currentCode,
     project.files.map((f) => f.name),
   )
 
@@ -65,7 +71,10 @@ export async function POST(req: Request) {
       await saveChat({
         projectId,
         uiMessages: messages as UIMessage[],
-        code: latestCode(messages),
+        // Only persist code written THIS turn. Scanning the whole history
+        // would resurrect an old writeOpenscad on text-only turns and
+        // clobber the user's manual edits.
+        code: latestCode(messages.slice(uiMessages.length) as StudioUIMessage[]),
       })
     },
   })

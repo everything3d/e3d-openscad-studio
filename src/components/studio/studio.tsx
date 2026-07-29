@@ -248,6 +248,7 @@ export function Studio({
               <ChatPanel
                 key={project.id}
                 projectId={project.id}
+                code={project.code}
                 initialMessages={project.messages}
                 onCode={handleAgentCode}
                 onTurnFinish={() => void refreshList()}
