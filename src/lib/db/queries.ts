@@ -1,7 +1,8 @@
+import { randomBytes } from 'node:crypto'
 import { and, asc, count, desc, eq, sql } from 'drizzle-orm'
 import { generateId, type UIMessage } from 'ai'
 import { db } from '.'
-import { messages, projects, workspaceFiles } from './schema'
+import { messages, projects, projectShares, workspaceFiles } from './schema'
 import {
   DEFAULT_CODE,
   PLACEHOLDER_PROJECT_NAME,
@@ -9,6 +10,139 @@ import {
   type ProjectSummary,
   type WorkspaceFile,
 } from '../types'
+
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+interface ProjectSnapshot {
+  sourceId: string
+  name: string
+  code: string
+  messages: UIMessage[]
+  files: WorkspaceFile[]
+}
+
+/**
+ * Load every artifact that follows a project when it is copied. Both local
+ * forks and share snapshots use this boundary so the two flows cannot drift.
+ */
+async function loadProjectSnapshot(
+  tx: DbTransaction,
+  sourceId: string,
+  ownerId: string,
+): Promise<ProjectSnapshot | null> {
+  const [project] = await tx
+    .select()
+    .from(projects)
+    .where(and(eq(projects.id, sourceId), eq(projects.userId, ownerId)))
+  if (!project) return null
+
+  const messageRows = await tx
+    .select()
+    .from(messages)
+    .where(eq(messages.projectId, sourceId))
+    .orderBy(asc(messages.seq))
+  const fileRows = await tx
+    .select()
+    .from(workspaceFiles)
+    .where(eq(workspaceFiles.projectId, sourceId))
+    .orderBy(asc(workspaceFiles.addedAt))
+
+  return {
+    sourceId: project.id,
+    name: project.name,
+    code: project.code,
+    messages: messageRows.map(
+      (row) =>
+        ({
+          id: row.id,
+          role: row.role,
+          parts: row.parts,
+          ...(row.metadata ? { metadata: row.metadata } : {}),
+        }) as UIMessage,
+    ),
+    files: fileRows.map((row) => ({
+      name: row.name,
+      data: row.data,
+      size: row.size,
+      addedAt: row.addedAt.getTime(),
+    })),
+  }
+}
+
+/**
+ * Materialize a complete project copy. Local forks and cross-account imports
+ * both pass through here, keeping message/file copy behavior in one place.
+ */
+async function materializeProjectCopy(
+  tx: DbTransaction,
+  {
+    snapshot,
+    userId,
+    name,
+    sharedFrom = null,
+  }: {
+    snapshot: ProjectSnapshot
+    userId: string
+    name: string
+    sharedFrom?: string | null
+  },
+): Promise<string> {
+  const id = generateId()
+  const values = {
+    id,
+    userId,
+    name,
+    code: snapshot.code,
+    forkedFrom: snapshot.sourceId,
+    sharedFrom,
+  }
+
+  if (sharedFrom) {
+    const inserted = await tx
+      .insert(projects)
+      .values(values)
+      .onConflictDoNothing({
+        target: [projects.userId, projects.sharedFrom],
+      })
+      .returning({ id: projects.id })
+
+    if (!inserted[0]) {
+      const [existing] = await tx
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(eq(projects.userId, userId), eq(projects.sharedFrom, sharedFrom)))
+      if (!existing) throw new Error('Shared project import conflicted without an existing copy')
+      return existing.id
+    }
+  } else {
+    await tx.insert(projects).values(values)
+  }
+
+  if (snapshot.messages.length) {
+    await tx.insert(messages).values(
+      snapshot.messages.map((message) => ({
+        id: message.id,
+        projectId: id,
+        role: message.role,
+        parts: message.parts,
+        metadata: message.metadata ?? null,
+      })),
+    )
+  }
+  if (snapshot.files.length) {
+    await tx.insert(workspaceFiles).values(
+      snapshot.files.map((file) => ({
+        projectId: id,
+        name: file.name,
+        data: file.data,
+        size: file.size,
+        addedAt: new Date(file.addedAt),
+      })),
+    )
+  }
+
+  return id
+}
 
 export async function listProjects(userId: string): Promise<ProjectSummary[]> {
   const rows = await db
@@ -98,44 +232,118 @@ export async function createProject(userId: string, name?: string): Promise<Full
 }
 
 export async function forkProject(sourceId: string, userId: string): Promise<FullProject | null> {
-  const source = await getProject(sourceId, userId)
-  if (!source) return null
-  const sourceMessages = await getProjectMessages(sourceId)
-
-  const id = generateId()
-  await db.transaction(async (tx) => {
-    await tx.insert(projects).values({
-      id,
+  const id = await db.transaction(async (tx) => {
+    const snapshot = await loadProjectSnapshot(tx, sourceId, userId)
+    if (!snapshot) return null
+    return materializeProjectCopy(tx, {
+      snapshot,
       userId,
-      name: `${source.name} (fork)`,
-      code: source.code,
-      forkedFrom: source.id,
+      name: `${snapshot.name} (fork)`,
     })
-    if (sourceMessages.length) {
-      await tx.insert(messages).values(
-        sourceMessages.map((m) => ({
-          id: m.id,
-          projectId: id,
-          role: m.role,
-          parts: m.parts,
-          metadata: m.metadata ?? null,
-        })),
-      )
-    }
-    if (source.files.length) {
-      await tx.insert(workspaceFiles).values(
-        source.files.map((f) => ({
-          projectId: id,
-          name: f.name,
-          data: f.data,
-          size: f.size,
-          addedAt: new Date(f.addedAt),
-        })),
-      )
-    }
   })
 
-  return getProject(id, userId)
+  return id ? getProject(id, userId) : null
+}
+
+export interface ProjectShareLink {
+  path: string
+  createdAt: number
+}
+
+function shareLink(token: string, createdAt: Date): ProjectShareLink {
+  return {
+    path: `/share/${token}`,
+    createdAt: createdAt.getTime(),
+  }
+}
+
+export async function getActiveProjectShare(
+  projectId: string,
+  userId: string,
+): Promise<ProjectShareLink | null> {
+  const [share] = await db
+    .select({ token: projectShares.token, createdAt: projectShares.createdAt })
+    .from(projectShares)
+    .where(and(eq(projectShares.projectId, projectId), eq(projectShares.ownerId, userId)))
+  return share ? shareLink(share.token, share.createdAt) : null
+}
+
+/** Replace the current link with a fresh immutable snapshot and token. */
+export async function replaceProjectShare(
+  projectId: string,
+  userId: string,
+): Promise<ProjectShareLink | null> {
+  return db.transaction(async (tx) => {
+    const snapshot = await loadProjectSnapshot(tx, projectId, userId)
+    if (!snapshot) return null
+
+    await tx.delete(projectShares).where(eq(projectShares.projectId, projectId))
+
+    const [share] = await tx
+      .insert(projectShares)
+      .values({
+        id: generateId(),
+        projectId,
+        ownerId: userId,
+        token: randomBytes(32).toString('base64url'),
+        snapshotName: snapshot.name,
+        snapshot,
+      })
+      .returning({ token: projectShares.token, createdAt: projectShares.createdAt })
+
+    return shareLink(share.token, share.createdAt)
+  })
+}
+
+export async function disableProjectShare(projectId: string, userId: string): Promise<void> {
+  await db
+    .delete(projectShares)
+    .where(and(eq(projectShares.projectId, projectId), eq(projectShares.ownerId, userId)))
+}
+
+export interface ProjectSharePreview {
+  sourceProjectId: string
+  ownerId: string
+  name: string
+  createdAt: number
+}
+
+export async function getProjectSharePreview(token: string): Promise<ProjectSharePreview | null> {
+  const [share] = await db
+    .select({
+      sourceProjectId: projectShares.projectId,
+      ownerId: projectShares.ownerId,
+      name: projectShares.snapshotName,
+      createdAt: projectShares.createdAt,
+    })
+    .from(projectShares)
+    .where(eq(projectShares.token, token))
+
+  return share ? { ...share, createdAt: share.createdAt.getTime() } : null
+}
+
+/**
+ * Import a token-gated snapshot into a user's account. Repeated or concurrent
+ * imports return the same project via the (userId, sharedFrom) unique index.
+ */
+export async function importProjectShare(token: string, userId: string): Promise<string | null> {
+  return db.transaction(async (tx) => {
+    const [share] = await tx
+      .select()
+      .from(projectShares)
+      .where(eq(projectShares.token, token))
+    if (!share) return null
+    if (share.ownerId === userId) return share.projectId
+
+    const snapshot = share.snapshot as ProjectSnapshot
+
+    return materializeProjectCopy(tx, {
+      snapshot,
+      userId,
+      name: `${snapshot.name} (shared copy)`,
+      sharedFrom: share.id,
+    })
+  })
 }
 
 export async function renameProject(id: string, userId: string, name: string): Promise<void> {

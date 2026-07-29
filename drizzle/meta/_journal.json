@@ -15,6 +15,13 @@
       "when": 1783937816938,
       "tag": "0001_sticky_justice",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785312265520,
+      "tag": "0002_graceful_power_man",
+      "breakpoints": true
     }
   ]
 }

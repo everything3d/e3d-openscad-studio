@@ -23,6 +23,9 @@ to branch a new idea.
   workspace files (SVG/DXF/STL/`.scad` libraries), persisted in Postgres.
 - **Fork** — clone any project (code + history + files) into a new one that remembers
   its ancestor.
+- **Share** — create a revocable link to a frozen project snapshot. Another signed-in
+  user can open the link as a private, independently editable copy with the full
+  conversation, source, and workspace files.
 
 ## Architecture
 

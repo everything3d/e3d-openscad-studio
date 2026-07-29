@@ -6,6 +6,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core'
 
 /**
@@ -13,16 +14,22 @@ import {
  * and the workspace files it imports. Forking clones a project into a new
  * one that remembers its ancestor.
  */
-export const projects = pgTable('projects', {
-  id: text('id').primaryKey(),
-  /** Clerk user id owning this project. */
-  userId: text('user_id').notNull().default(''),
-  name: text('name').notNull(),
-  code: text('code').notNull(),
-  forkedFrom: text('forked_from'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-})
+export const projects = pgTable(
+  'projects',
+  {
+    id: text('id').primaryKey(),
+    /** Clerk user id owning this project. */
+    userId: text('user_id').notNull().default(''),
+    name: text('name').notNull(),
+    code: text('code').notNull(),
+    forkedFrom: text('forked_from'),
+    /** Internal share snapshot id, set only on cross-account imports. */
+    sharedFrom: text('shared_from'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('projects_user_shared_from_unique').on(t.userId, t.sharedFrom)],
+)
 
 /**
  * Chat messages, stored in the AI SDK UIMessage shape (`parts` is the
@@ -59,6 +66,31 @@ export const workspaceFiles = pgTable(
   (t) => [primaryKey({ columns: [t.projectId, t.name] })],
 )
 
+/**
+ * A frozen, capability-link snapshot of a project. Replacing or disabling a
+ * link deletes this row; projects imported from it remain independent.
+ */
+export const projectShares = pgTable('project_shares', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id')
+    .notNull()
+    .unique()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  /** Denormalized for simple owner-scoped share lifecycle queries. */
+  ownerId: text('owner_id').notNull(),
+  /** 256 random bits encoded as base64url. Possession grants snapshot access. */
+  token: text('token').notNull().unique(),
+  /** Denormalized so the public landing page need not load the large snapshot. */
+  snapshotName: text('snapshot_name').notNull(),
+  /**
+   * The complete copy payload as one object. New copyable project artifacts can
+   * be added to the shared fork infrastructure without another share migration.
+   */
+  snapshot: jsonb('snapshot').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export type ProjectRow = typeof projects.$inferSelect
 export type MessageRow = typeof messages.$inferSelect
 export type WorkspaceFileRow = typeof workspaceFiles.$inferSelect
+export type ProjectShareRow = typeof projectShares.$inferSelect

@@ -16,14 +16,25 @@ import { Sidebar } from './sidebar'
 import { ChatPanel } from './chat-panel'
 import { CodeEditor } from './code-editor'
 import { Preview } from './preview'
+import { ShareProjectDialog } from './share-project-dialog'
 import { WorkspacePanel } from './workspace-panel'
 
 type OpenProject = FullProject & { messages: StudioUIMessage[] }
 type RightTab = 'preview' | 'code' | 'files'
 
-export function Studio({ initialProjects }: { initialProjects: ProjectSummary[] }) {
+export function Studio({
+  initialProjects,
+  initialActiveId = null,
+}: {
+  initialProjects: ProjectSummary[]
+  initialActiveId?: string | null
+}) {
   const [projects, setProjects] = useState<ProjectSummary[]>(initialProjects)
-  const [activeId, setActiveId] = useState<string | null>(initialProjects[0]?.id ?? null)
+  const [activeId, setActiveId] = useState<string | null>(
+    initialProjects.some((item) => item.id === initialActiveId)
+      ? initialActiveId
+      : (initialProjects[0]?.id ?? null),
+  )
   const [project, setProject] = useState<OpenProject | null>(null)
   const [rightTab, setRightTab] = useState<RightTab>('preview')
 
@@ -225,7 +236,8 @@ export function Studio({ initialProjects }: { initialProjects: ProjectSummary[] 
               forked
             </span>
           )}
-          <div className="ml-auto flex items-center">
+          <div className="ml-auto flex items-center gap-1">
+            {project && <ShareProjectDialog projectId={project.id} />}
             <UserButton />
           </div>
         </header>
