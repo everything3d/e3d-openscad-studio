@@ -1,5 +1,6 @@
 import {
   bigserial,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -8,6 +9,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 
 /**
  * A project *is* a chat: conversation history, the current OpenSCAD source,
@@ -18,8 +20,10 @@ export const projects = pgTable(
   'projects',
   {
     id: text('id').primaryKey(),
-    /** Clerk user id owning this project. */
+    /** Clerk user id that created this project (and owns it when personal). */
     userId: text('user_id').notNull().default(''),
+    /** Clerk organization id. Null means this is a private, personal project. */
+    organizationId: text('organization_id'),
     name: text('name').notNull(),
     code: text('code').notNull(),
     forkedFrom: text('forked_from'),
@@ -28,7 +32,16 @@ export const projects = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('projects_user_shared_from_unique').on(t.userId, t.sharedFrom)],
+  (t) => [
+    index('projects_user_updated_at_idx').on(t.userId, t.updatedAt),
+    index('projects_organization_updated_at_idx').on(t.organizationId, t.updatedAt),
+    uniqueIndex('projects_user_shared_from_unique')
+      .on(t.userId, t.sharedFrom)
+      .where(sql`${t.organizationId} is null`),
+    uniqueIndex('projects_organization_shared_from_unique')
+      .on(t.organizationId, t.sharedFrom)
+      .where(sql`${t.organizationId} is not null`),
+  ],
 )
 
 /**
@@ -76,8 +89,10 @@ export const projectShares = pgTable('project_shares', {
     .notNull()
     .unique()
     .references(() => projects.id, { onDelete: 'cascade' }),
-  /** Denormalized for simple owner-scoped share lifecycle queries. */
+  /** Clerk user id that created the current share snapshot. */
   ownerId: text('owner_id').notNull(),
+  /** Organization that owned the source snapshot, or null for personal projects. */
+  organizationId: text('organization_id'),
   /** 256 random bits encoded as base64url. Possession grants snapshot access. */
   token: text('token').notNull().unique(),
   /** Denormalized so the public landing page need not load the large snapshot. */

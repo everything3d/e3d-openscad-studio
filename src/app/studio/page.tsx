@@ -8,11 +8,18 @@ export const dynamic = 'force-dynamic'
 type Props = { searchParams: Promise<{ project?: string | string[] }> }
 
 export default async function StudioPage({ searchParams }: Props) {
-  const { userId } = await auth()
+  const { userId, orgId } = await auth()
   if (!userId) redirect('/sign-in')
   const { project } = await searchParams
-  const projects = await listProjects(userId)
+  const access = { userId, organizationId: orgId ?? null }
+  const projects = await listProjects(access)
   const requestedId = typeof project === 'string' ? project : null
   const initialActiveId = projects.some((item) => item.id === requestedId) ? requestedId : null
-  return <Studio initialProjects={projects} initialActiveId={initialActiveId} />
+  return (
+    <Studio
+      key={orgId ?? `personal:${userId}`}
+      initialProjects={projects}
+      initialActiveId={initialActiveId}
+    />
+  )
 }

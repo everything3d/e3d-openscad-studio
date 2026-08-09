@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { UserButton } from '@clerk/nextjs'
+import { OrganizationSwitcher, UserButton } from '@clerk/nextjs'
 import { cn } from '@/lib/utils'
 import { useRenderer } from '@/lib/openscad/useRenderer'
 import { meshTo3MF } from '@/lib/openscad/threemf'
@@ -238,6 +238,11 @@ export function Studio({
           )}
           <div className="ml-auto flex items-center gap-1">
             {project && <ShareProjectDialog projectId={project.id} />}
+            <OrganizationSwitcher
+              afterCreateOrganizationUrl="/studio"
+              afterSelectOrganizationUrl="/studio"
+              afterSelectPersonalUrl="/studio"
+            />
             <UserButton />
           </div>
         </header>

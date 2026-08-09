@@ -12,13 +12,14 @@ type Params = { params: Promise<{ id: string }> }
  * with the name the client should display.
  */
 export async function POST(req: Request, { params }: Params) {
-  const { userId } = await auth()
+  const { userId, orgId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const access = { userId, organizationId: orgId ?? null }
 
   const { id } = await params
   const { text } = (await req.json().catch(() => ({}))) as { text?: string }
 
-  const project = await getProject(id, userId)
+  const project = await getProject(id, access)
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
   if (project.name !== PLACEHOLDER_PROJECT_NAME) {
     return NextResponse.json({ name: project.name })
@@ -27,6 +28,6 @@ export async function POST(req: Request, { params }: Params) {
   const name = await generateProjectName(text ?? '')
   if (!name) return NextResponse.json({ name: project.name })
 
-  const applied = await autoNameProject(id, userId, name)
+  const applied = await autoNameProject(id, access, name)
   return NextResponse.json({ name: applied ? name : project.name })
 }

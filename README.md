@@ -21,6 +21,9 @@ to branch a new idea.
   code by hand and the preview re-renders automatically.
 - **Projects = chats** — each project holds its conversation history, code, and
   workspace files (SVG/DXF/STL/`.scad` libraries), persisted in Postgres.
+- **Team workspaces** — switch between a personal workspace and Clerk Organizations.
+  Every organization member sees and can collaborate on the same projects, chats,
+  OpenSCAD code, and workspace files.
 - **Fork** — clone any project (code + history + files) into a new one that remembers
   its ancestor.
 - **Share** — create a revocable link to a frozen project snapshot. Another signed-in
@@ -49,6 +52,8 @@ openscad-wasm worker     ──▶  binary STL  ──▶  three.js preview
   with `useChat` streaming.
 - **Persistence**: Postgres via Drizzle ORM (`projects`, `messages` as AI SDK
   UIMessages, `workspace_files`).
+- **Tenancy**: Clerk Organizations provide team creation, invitations, membership,
+  and the active workspace context. Personal projects remain scoped to their creator.
 - **Rendering**: OpenSCAD wasm (vendored snapshot with the Manifold geometry backend)
   in a Web Worker; wasm + font bundle served from `public/openscad/`.
 
@@ -67,6 +72,11 @@ cp .env.example .env.local
 npm run db:migrate   # apply schema
 npm run dev          # http://localhost:3000
 ```
+
+To use team workspaces, enable **Organizations** in the Clerk Dashboard. The studio's
+organization switcher then lets users create teams, invite members, and move between
+their personal and shared organization workspaces. Organization members are treated
+as collaborators; simultaneous real-time editing is not currently coordinated.
 
 Describe a model in the chat ("a hexagonal phone stand", "a 20 mm gear with 12
 teeth") and watch it render.

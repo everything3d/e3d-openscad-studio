@@ -9,20 +9,26 @@ import {
 type Params = { params: Promise<{ id: string }> }
 
 export async function GET(_req: Request, { params }: Params) {
-  const { userId } = await auth()
+  const { userId, orgId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
-  const share = await getActiveProjectShare(id, userId)
+  const share = await getActiveProjectShare(id, {
+    userId,
+    organizationId: orgId ?? null,
+  })
   return NextResponse.json({ share })
 }
 
 export async function POST(_req: Request, { params }: Params) {
-  const { userId } = await auth()
+  const { userId, orgId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
-  const share = await replaceProjectShare(id, userId)
+  const share = await replaceProjectShare(id, {
+    userId,
+    organizationId: orgId ?? null,
+  })
   if (!share) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 })
   }
@@ -30,10 +36,10 @@ export async function POST(_req: Request, { params }: Params) {
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
-  const { userId } = await auth()
+  const { userId, orgId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
-  await disableProjectShare(id, userId)
+  await disableProjectShare(id, { userId, organizationId: orgId ?? null })
   return new Response(null, { status: 204 })
 }

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { and, asc, count, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm'
 import { generateId, type UIMessage } from 'ai'
 import { db } from '.'
 import { messages, projects, projectShares, workspaceFiles } from './schema'
@@ -12,6 +12,18 @@ import {
 } from '../types'
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/** The active Clerk tenancy for a request. Null organization means personal space. */
+export interface ProjectAccess {
+  userId: string
+  organizationId: string | null
+}
+
+function projectAccessWhere(access: ProjectAccess) {
+  return access.organizationId
+    ? eq(projects.organizationId, access.organizationId)
+    : and(eq(projects.userId, access.userId), isNull(projects.organizationId))!
+}
 
 interface ProjectSnapshot {
   sourceId: string
@@ -28,12 +40,12 @@ interface ProjectSnapshot {
 async function loadProjectSnapshot(
   tx: DbTransaction,
   sourceId: string,
-  ownerId: string,
+  access: ProjectAccess,
 ): Promise<ProjectSnapshot | null> {
   const [project] = await tx
     .select()
     .from(projects)
-    .where(and(eq(projects.id, sourceId), eq(projects.userId, ownerId)))
+    .where(and(eq(projects.id, sourceId), projectAccessWhere(access)))
   if (!project) return null
 
   const messageRows = await tx
@@ -77,12 +89,12 @@ async function materializeProjectCopy(
   tx: DbTransaction,
   {
     snapshot,
-    userId,
+    access,
     name,
     sharedFrom = null,
   }: {
     snapshot: ProjectSnapshot
-    userId: string
+    access: ProjectAccess
     name: string
     sharedFrom?: string | null
   },
@@ -90,7 +102,8 @@ async function materializeProjectCopy(
   const id = generateId()
   const values = {
     id,
-    userId,
+    userId: access.userId,
+    organizationId: access.organizationId,
     name,
     code: snapshot.code,
     forkedFrom: snapshot.sourceId,
@@ -101,16 +114,14 @@ async function materializeProjectCopy(
     const inserted = await tx
       .insert(projects)
       .values(values)
-      .onConflictDoNothing({
-        target: [projects.userId, projects.sharedFrom],
-      })
+      .onConflictDoNothing()
       .returning({ id: projects.id })
 
     if (!inserted[0]) {
       const [existing] = await tx
         .select({ id: projects.id })
         .from(projects)
-        .where(and(eq(projects.userId, userId), eq(projects.sharedFrom, sharedFrom)))
+        .where(and(projectAccessWhere(access), eq(projects.sharedFrom, sharedFrom)))
       if (!existing) throw new Error('Shared project import conflicted without an existing copy')
       return existing.id
     }
@@ -144,7 +155,7 @@ async function materializeProjectCopy(
   return id
 }
 
-export async function listProjects(userId: string): Promise<ProjectSummary[]> {
+export async function listProjects(access: ProjectAccess): Promise<ProjectSummary[]> {
   const rows = await db
     .select({
       id: projects.id,
@@ -155,18 +166,18 @@ export async function listProjects(userId: string): Promise<ProjectSummary[]> {
     })
     .from(projects)
     .leftJoin(messages, eq(messages.projectId, projects.id))
-    .where(eq(projects.userId, userId))
+    .where(projectAccessWhere(access))
     .groupBy(projects.id)
     .orderBy(desc(projects.updatedAt))
 
   return rows.map((r) => ({ ...r, updatedAt: r.updatedAt.getTime() }))
 }
 
-export async function getProject(id: string, userId: string): Promise<FullProject | null> {
+export async function getProject(id: string, access: ProjectAccess): Promise<FullProject | null> {
   const [project] = await db
     .select()
     .from(projects)
-    .where(and(eq(projects.id, id), eq(projects.userId, userId)))
+    .where(and(eq(projects.id, id), projectAccessWhere(access)))
   if (!project) return null
 
   const files = await db
@@ -209,12 +220,13 @@ export async function getProjectMessages(id: string): Promise<UIMessage[]> {
   )
 }
 
-export async function createProject(userId: string, name?: string): Promise<FullProject> {
+export async function createProject(access: ProjectAccess, name?: string): Promise<FullProject> {
   const [row] = await db
     .insert(projects)
     .values({
       id: generateId(),
-      userId,
+      userId: access.userId,
+      organizationId: access.organizationId,
       name: name || PLACEHOLDER_PROJECT_NAME,
       code: DEFAULT_CODE,
     })
@@ -231,18 +243,21 @@ export async function createProject(userId: string, name?: string): Promise<Full
   }
 }
 
-export async function forkProject(sourceId: string, userId: string): Promise<FullProject | null> {
+export async function forkProject(
+  sourceId: string,
+  access: ProjectAccess,
+): Promise<FullProject | null> {
   const id = await db.transaction(async (tx) => {
-    const snapshot = await loadProjectSnapshot(tx, sourceId, userId)
+    const snapshot = await loadProjectSnapshot(tx, sourceId, access)
     if (!snapshot) return null
     return materializeProjectCopy(tx, {
       snapshot,
-      userId,
+      access,
       name: `${snapshot.name} (fork)`,
     })
   })
 
-  return id ? getProject(id, userId) : null
+  return id ? getProject(id, access) : null
 }
 
 export interface ProjectShareLink {
@@ -259,22 +274,23 @@ function shareLink(token: string, createdAt: Date): ProjectShareLink {
 
 export async function getActiveProjectShare(
   projectId: string,
-  userId: string,
+  access: ProjectAccess,
 ): Promise<ProjectShareLink | null> {
   const [share] = await db
     .select({ token: projectShares.token, createdAt: projectShares.createdAt })
     .from(projectShares)
-    .where(and(eq(projectShares.projectId, projectId), eq(projectShares.ownerId, userId)))
+    .innerJoin(projects, eq(projectShares.projectId, projects.id))
+    .where(and(eq(projectShares.projectId, projectId), projectAccessWhere(access)))
   return share ? shareLink(share.token, share.createdAt) : null
 }
 
 /** Replace the current link with a fresh immutable snapshot and token. */
 export async function replaceProjectShare(
   projectId: string,
-  userId: string,
+  access: ProjectAccess,
 ): Promise<ProjectShareLink | null> {
   return db.transaction(async (tx) => {
-    const snapshot = await loadProjectSnapshot(tx, projectId, userId)
+    const snapshot = await loadProjectSnapshot(tx, projectId, access)
     if (!snapshot) return null
 
     await tx.delete(projectShares).where(eq(projectShares.projectId, projectId))
@@ -284,7 +300,8 @@ export async function replaceProjectShare(
       .values({
         id: generateId(),
         projectId,
-        ownerId: userId,
+        ownerId: access.userId,
+        organizationId: access.organizationId,
         token: randomBytes(32).toString('base64url'),
         snapshotName: snapshot.name,
         snapshot,
@@ -295,15 +312,24 @@ export async function replaceProjectShare(
   })
 }
 
-export async function disableProjectShare(projectId: string, userId: string): Promise<void> {
-  await db
-    .delete(projectShares)
-    .where(and(eq(projectShares.projectId, projectId), eq(projectShares.ownerId, userId)))
+export async function disableProjectShare(
+  projectId: string,
+  access: ProjectAccess,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [project] = await tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.id, projectId), projectAccessWhere(access)))
+    if (!project) return
+    await tx.delete(projectShares).where(eq(projectShares.projectId, projectId))
+  })
 }
 
 export interface ProjectSharePreview {
   sourceProjectId: string
   ownerId: string
+  organizationId: string | null
   name: string
   createdAt: number
 }
@@ -313,6 +339,7 @@ export async function getProjectSharePreview(token: string): Promise<ProjectShar
     .select({
       sourceProjectId: projectShares.projectId,
       ownerId: projectShares.ownerId,
+      organizationId: projectShares.organizationId,
       name: projectShares.snapshotName,
       createdAt: projectShares.createdAt,
     })
@@ -323,34 +350,44 @@ export async function getProjectSharePreview(token: string): Promise<ProjectShar
 }
 
 /**
- * Import a token-gated snapshot into a user's account. Repeated or concurrent
- * imports return the same project via the (userId, sharedFrom) unique index.
+ * Import a token-gated snapshot into the active workspace. Repeated or concurrent
+ * imports return the same project via the workspace/sharedFrom unique indexes.
  */
-export async function importProjectShare(token: string, userId: string): Promise<string | null> {
+export async function importProjectShare(
+  token: string,
+  access: ProjectAccess,
+): Promise<string | null> {
   return db.transaction(async (tx) => {
     const [share] = await tx
       .select()
       .from(projectShares)
       .where(eq(projectShares.token, token))
     if (!share) return null
-    if (share.ownerId === userId) return share.projectId
+    const isSourceWorkspace = share.organizationId
+      ? share.organizationId === access.organizationId
+      : share.ownerId === access.userId && access.organizationId === null
+    if (isSourceWorkspace) return share.projectId
 
     const snapshot = share.snapshot as ProjectSnapshot
 
     return materializeProjectCopy(tx, {
       snapshot,
-      userId,
+      access,
       name: `${snapshot.name} (shared copy)`,
       sharedFrom: share.id,
     })
   })
 }
 
-export async function renameProject(id: string, userId: string, name: string): Promise<void> {
+export async function renameProject(
+  id: string,
+  access: ProjectAccess,
+  name: string,
+): Promise<void> {
   await db
     .update(projects)
     .set({ name, updatedAt: sql`now()` })
-    .where(and(eq(projects.id, id), eq(projects.userId, userId)))
+    .where(and(eq(projects.id, id), projectAccessWhere(access)))
 }
 
 /**
@@ -360,7 +397,7 @@ export async function renameProject(id: string, userId: string, name: string): P
  */
 export async function autoNameProject(
   id: string,
-  userId: string,
+  access: ProjectAccess,
   name: string,
 ): Promise<boolean> {
   const rows = await db
@@ -369,7 +406,7 @@ export async function autoNameProject(
     .where(
       and(
         eq(projects.id, id),
-        eq(projects.userId, userId),
+        projectAccessWhere(access),
         eq(projects.name, PLACEHOLDER_PROJECT_NAME),
       ),
     )
@@ -377,20 +414,34 @@ export async function autoNameProject(
   return rows.length > 0
 }
 
-export async function updateProjectCode(id: string, userId: string, code: string): Promise<void> {
+export async function updateProjectCode(
+  id: string,
+  access: ProjectAccess,
+  code: string,
+): Promise<void> {
   await db
     .update(projects)
     .set({ code, updatedAt: sql`now()` })
-    .where(and(eq(projects.id, id), eq(projects.userId, userId)))
+    .where(and(eq(projects.id, id), projectAccessWhere(access)))
 }
 
-export async function deleteProject(id: string, userId: string): Promise<void> {
-  await db.delete(projects).where(and(eq(projects.id, id), eq(projects.userId, userId)))
+export async function deleteProject(id: string, access: ProjectAccess): Promise<void> {
+  await db.delete(projects).where(and(eq(projects.id, id), projectAccessWhere(access)))
 }
 
 /** Replace the full workspace file list for a project. */
-export async function replaceFiles(id: string, files: WorkspaceFile[]): Promise<void> {
-  await db.transaction(async (tx) => {
+export async function replaceFiles(
+  id: string,
+  access: ProjectAccess,
+  files: WorkspaceFile[],
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [project] = await tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.id, id), projectAccessWhere(access)))
+    if (!project) return false
+
     await tx.delete(workspaceFiles).where(eq(workspaceFiles.projectId, id))
     if (files.length) {
       await tx.insert(workspaceFiles).values(
@@ -407,6 +458,7 @@ export async function replaceFiles(id: string, files: WorkspaceFile[]): Promise<
       .update(projects)
       .set({ updatedAt: sql`now()` })
       .where(eq(projects.id, id))
+    return true
   })
 }
 
@@ -416,14 +468,22 @@ export async function replaceFiles(id: string, files: WorkspaceFile[]): Promise<
  */
 export async function saveChat({
   projectId,
+  access,
   uiMessages,
   code,
 }: {
   projectId: string
+  access: ProjectAccess
   uiMessages: UIMessage[]
   code: string | null
 }): Promise<void> {
   await db.transaction(async (tx) => {
+    const [authorizedProject] = await tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.id, projectId), projectAccessWhere(access)))
+    if (!authorizedProject) throw new Error('Project access was revoked')
+
     await tx.delete(messages).where(eq(messages.projectId, projectId))
     if (uiMessages.length) {
       await tx.insert(messages).values(

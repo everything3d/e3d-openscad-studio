@@ -22,6 +22,13 @@
       "when": 1785312265520,
       "tag": "0002_graceful_power_man",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786304261511,
+      "tag": "0003_flaky_firebird",
+      "breakpoints": true
     }
   ]
 }
