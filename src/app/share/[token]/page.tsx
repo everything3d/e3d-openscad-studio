@@ -10,7 +10,7 @@ type Props = { params: Promise<{ token: string }> }
 
 export default async function SharedProjectPage({ params }: Props) {
   const { token } = await params
-  const [share, { userId }] = await Promise.all([getProjectSharePreview(token), auth()])
+  const [share, { userId, orgId }] = await Promise.all([getProjectSharePreview(token), auth()])
 
   if (!share) {
     return (
@@ -28,7 +28,9 @@ export default async function SharedProjectPage({ params }: Props) {
     )
   }
 
-  const isOwner = userId === share.ownerId
+  const isSourceWorkspace = share.organizationId
+    ? orgId === share.organizationId
+    : userId === share.ownerId && !orgId
   const action = openSharedProject.bind(null, token)
   const snapshotDate = new Intl.DateTimeFormat('en', {
     dateStyle: 'medium',
@@ -53,8 +55,8 @@ export default async function SharedProjectPage({ params }: Props) {
 
           <h1 className="text-balance text-2xl font-semibold leading-tight">{share.name}</h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            Open a private copy with the conversation, OpenSCAD code, and workspace files.
-            Your changes won&apos;t affect the original.
+            Open a copy in your active workspace with the conversation, OpenSCAD code, and
+            workspace files. Your changes won&apos;t affect the original.
           </p>
         </div>
 
@@ -69,7 +71,11 @@ export default async function SharedProjectPage({ params }: Props) {
 
         <form action={action} className="border-t bg-muted/20 p-7">
           <Button type="submit" size="lg" className="w-full">
-            {isOwner ? 'Open original project' : userId ? 'Open private copy' : 'Sign in to open a copy'}
+            {isSourceWorkspace
+              ? 'Open original project'
+              : userId
+                ? 'Open a copy in this workspace'
+                : 'Sign in to open a copy'}
           </Button>
         </form>
       </section>

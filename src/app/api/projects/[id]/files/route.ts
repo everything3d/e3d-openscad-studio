@@ -6,11 +6,12 @@ import type { WorkspaceFile } from '@/lib/types'
 type Params = { params: Promise<{ id: string }> }
 
 export async function PUT(req: Request, { params }: Params) {
-  const { userId } = await auth()
+  const { userId, orgId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const access = { userId, organizationId: orgId ?? null }
 
   const { id } = await params
-  const project = await getProject(id, userId)
+  const project = await getProject(id, access)
   if (!project) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 })
   }
@@ -20,6 +21,6 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: 'files array is required' }, { status: 400 })
   }
 
-  await replaceFiles(id, body.files)
+  await replaceFiles(id, access, body.files)
   return NextResponse.json({ ok: true })
 }

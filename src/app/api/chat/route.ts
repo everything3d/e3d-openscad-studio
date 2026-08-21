@@ -23,7 +23,7 @@ function latestCode(messages: StudioUIMessage[]): string | null {
 }
 
 export async function POST(req: Request) {
-  const { userId } = await auth()
+  const { userId, orgId } = await auth()
   if (!userId) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -38,7 +38,8 @@ export async function POST(req: Request) {
   if (!projectId) {
     return Response.json({ error: 'projectId is required' }, { status: 400 })
   }
-  const project = await getProject(projectId, userId)
+  const access = { userId, organizationId: orgId ?? null }
+  const project = await getProject(projectId, access)
   if (!project) {
     return Response.json({ error: 'Project not found' }, { status: 404 })
   }
@@ -70,6 +71,7 @@ export async function POST(req: Request) {
     onFinish: async ({ messages }) => {
       await saveChat({
         projectId,
+        access,
         uiMessages: messages as UIMessage[],
         // Only persist code written THIS turn. Scanning the whole history
         // would resurrect an old writeOpenscad on text-only turns and
