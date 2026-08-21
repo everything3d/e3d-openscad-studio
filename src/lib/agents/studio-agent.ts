@@ -1,4 +1,5 @@
 import { ToolLoopAgent, isStepCount, type InferAgentUIMessage } from 'ai'
+import { studioModel } from '../ai/openrouter'
 import { createWriteOpenscadTool } from '../tools/write-openscad'
 import { createReadOpenscadTool } from '../tools/read-openscad'
 import { searchFontsTool } from '../tools/search-fonts'
@@ -30,8 +31,8 @@ Rules:
 export function createStudioAgent(currentCode: string, fileNames: string[]) {
   const source = { code: currentCode }
   return new ToolLoopAgent({
-    // Override with STUDIO_MODEL for local testing (any AI Gateway model id).
-    model: process.env.STUDIO_MODEL ?? 'openai/gpt-5.6-terra',
+    // Override with STUDIO_MODEL for local testing (any OpenRouter model id).
+    model: studioModel(),
     instructions:
       `${BASE_INSTRUCTIONS}\n\n` +
       `Current OpenSCAD source for this project:\n\n\`\`\`scad\n${currentCode}\n\`\`\`\n\n` +

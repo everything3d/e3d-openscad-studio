@@ -34,7 +34,7 @@ Browser                              Server (Next.js App Router)
 ───────                              ───────────────────────────
 Chat (useChat + AI Elements)  ──▶    POST /api/chat
                                        └─ ToolLoopAgent (AI SDK)
-                                          ├─ model: openai/gpt-5.6-terra (AI Gateway)
+                                          ├─ model: openai/gpt-5.6-terra (OpenRouter)
                                           ├─ tool: writeOpenscad (zod-typed)
                                           └─ onFinish → persist chat + code (Drizzle/Postgres)
 writeOpenscad tool part  ──▶  editor + preview
@@ -42,9 +42,14 @@ CodeMirror editor        ──▶  PATCH /api/projects/[id]
 openscad-wasm worker     ──▶  binary STL  ──▶  three.js preview
 ```
 
-- **AI**: [AI SDK](https://ai-sdk.dev) `ToolLoopAgent` behind an API route, using the
-  [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) (`openai/gpt-5.6-terra`).
-  No API keys in the browser — deployments on Vercel authenticate via OIDC.
+- **AI**: [AI SDK](https://ai-sdk.dev) `ToolLoopAgent` behind an API route, routed
+  through [OpenRouter](https://openrouter.ai) (`openai/gpt-5.6-terra` by default).
+  Model ids are configured in one place, `src/lib/ai/openrouter.ts`, and overridable
+  per environment via `STUDIO_MODEL` / `NAMING_MODEL` — any id from
+  [openrouter.ai/models](https://openrouter.ai/models) that supports tool calling and
+  image input. `STUDIO_MODEL_FALLBACKS` adds a routing chain OpenRouter falls through
+  when the primary model is unavailable. All calls are server-side; no API keys
+  reach the browser.
 - **Chat UI**: [AI Elements](https://elements.ai-sdk.dev) (shadcn/ui-based components)
   with `useChat` streaming.
 - **Persistence**: Postgres via Drizzle ORM (`projects`, `messages` as AI SDK
@@ -62,7 +67,7 @@ createdb e3d_openscad_studio
 
 cp .env.example .env.local
 # Set POSTGRES_URL (e.g. postgres://<you>@localhost:5432/e3d_openscad_studio)
-# Set AI_GATEWAY_API_KEY (create one at https://vercel.com/~/ai-gateway/api-keys)
+# Set OPENROUTER_API_KEY (create one at https://openrouter.ai/settings/keys)
 
 npm run db:migrate   # apply schema
 npm run dev          # http://localhost:3000
@@ -86,7 +91,8 @@ npm run db:migrate   # apply migrations
 
 1. Add a Postgres database (e.g. Neon) from the Vercel Marketplace — it provisions
    `POSTGRES_URL` automatically.
-2. AI Gateway auth is automatic on Vercel (OIDC); no key needed.
+2. Add `OPENROUTER_API_KEY` under Project → Settings → Environment Variables
+   (Production, Preview, and Development), then redeploy so it takes effect.
 3. Run migrations against the production database: `POSTGRES_URL=... npm run db:migrate`.
 
 ## Tech stack

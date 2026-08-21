@@ -64,7 +64,7 @@ export async function POST(req: Request) {
     // Without this the streamed assistant message has an empty id, which
     // breaks React keys and message identity once persisted.
     generateMessageId: generateId,
-    // Surface real error messages (e.g. missing AI_GATEWAY_API_KEY) instead
+    // Surface real error messages (e.g. missing OPENROUTER_API_KEY) instead
     // of the SDK's masked default — this app has no secrets in errors.
     onError: (error) => (error instanceof Error ? error.message : String(error)),
     onFinish: async ({ messages }) => {

@@ -1,4 +1,5 @@
 import { generateText } from 'ai'
+import { namingModel } from '../ai/openrouter'
 
 const SYSTEM = `You name projects in a 3D modeling studio where users describe parts and the AI writes OpenSCAD code.
 
@@ -20,7 +21,7 @@ export async function generateProjectName(firstMessage: string): Promise<string 
   try {
     const { text } = await generateText({
       // Naming is a one-liner: use the cheapest fast model, overridable.
-      model: process.env.NAMING_MODEL ?? 'openai/gpt-5.4-nano',
+      model: namingModel(),
       system: SYSTEM,
       prompt,
     })
