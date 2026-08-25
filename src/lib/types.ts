@@ -56,7 +56,7 @@ export interface CanonicalSummary {
   updatedAt: number
 }
 
-/** The complete current canonical version shown in the starter detail view. */
+/** The complete current canonical version shown in the canonical detail view. */
 export interface CanonicalDetail extends CanonicalSummary {
   code: string
   files: WorkspaceFile[]
@@ -70,7 +70,7 @@ export interface StarterDraft {
   description: string
   modificationGuide: string
   reusableChanges: string[]
-  customerSpecificRisks: string[]
+  derivativeSpecificRisks: string[]
 }
 
 export const CANONICAL_LIMITS = {

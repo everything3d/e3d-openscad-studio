@@ -29,7 +29,7 @@ one `project`:
 1. A **canonical design** is a reusable, versioned package: OpenSCAD code,
    workspace files, title, description, preview image, and instructions for the
    agent about common modifications and gotchas. It contains no chat messages.
-2. A **workspace** is one mutable customer job: a copy of a canonical version (or
+2. A **derivative design** is one mutable workspace: a copy of a canonical version (or
    the blank starter), its own live code/files, and its own chat history.
 
 Opening a canonical uses the verb **Start design**, not Fork. It copies only the
@@ -37,15 +37,15 @@ canonical artifacts and begins with an empty conversation. Fork remains availabl
 for branching an existing workspace and may continue copying its conversation.
 
 Publishing or improving a canonical creates an immutable new canonical version.
-Existing customer workspaces remain attached to the exact version they started
+Existing derivative workspaces remain attached to the exact version they started
 from. There is no automatic merge or upstream synchronization in the MVP.
 
 ## Why this matters
 
-The current model makes the latest customer-specific code and the full accumulated
-conversation the only available starting point. That makes the next customer job
+The current model makes the latest derivative-specific code and the full accumulated
+conversation the only available starting point. That makes the next derivative
 worse and causes every new prompt to resend irrelevant history. At the same time,
-useful improvements discovered during a customer job have no reviewed route back
+useful improvements discovered during a derivative have no reviewed route back
 into the reusable design.
 
 This plan gives users a MakerWorld-like starter gallery, with AI chat replacing the
@@ -188,14 +188,14 @@ types in `src/lib/types.ts`:
   project as the next immutable version, then atomically advance `currentVersionId`.
 - `POST /api/projects/[id]/starter-draft` — return an AI-generated, non-persisted
   draft containing `title`, `description`, `modificationGuide`,
-  `reusableChanges[]`, and `customerSpecificRisks[]`. Bound the history and code
+  `reusableChanges[]`, and `derivativeSpecificRisks[]`. Bound the history and code
   sent to the model; failures fall back to empty editable fields and never block
   manual publishing.
 
 ## Visual and interaction direction
 
 Keep the Studio's dark workshop identity rather than cloning MakerWorld. The page's
-single job is: **choose a reliable starting point for the next customer job**.
+single job is: **choose a reliable starting point for the next derivative**.
 
 - Palette: printer-bed black `#0F1115`, graphite `#1C1F24`, steel `#323741`, paper
   `#F4F5F7`, action blue `#6E9BFF`, rendered green `#58C48D`. Reuse existing tokens
@@ -218,10 +218,10 @@ Suggested desktop hierarchy:
 │ Home         │  Start from a proven design        [ Search      ] │
 │ Recent work  │                                                     │
 │              │  [ Blank design ] [ Name plaque ] [ Coin bank ]   │
-│ Customer A   │  [ STARTER · v3 ] [ STARTER · v2 ] [ STARTER · v5]│
-│ Customer B   │                                                     │
+│ Derivative A │  [ STARTER · v3 ] [ STARTER · v2 ] [ STARTER · v5]│
+│ Derivative B │                                                     │
 │              │  Recent work                                       │
-│              │  [ customer jobs with source starter + date ]      │
+│              │  [ derivatives with source canonical + date ]      │
 └──────────────┴─────────────────────────────────────────────────────┘
 ```
 
@@ -247,8 +247,8 @@ and one primary action: `Start design`.
 
 **Out of scope**:
 
-- Automatically merging arbitrary customer changes into a canonical
-- Deleting or truncating an existing customer chat
+- Automatically merging arbitrary derivative changes into a canonical
+- Deleting or truncating an existing derivative chat
 - Copying chat messages when starting from a canonical
 - Public anonymous access, community publishing, likes/download counts, or comments
 - Category administration; categories are optional data only in this release
@@ -371,17 +371,17 @@ Add a workspace-header action named `Save as starter`. Its dialog:
 
 1. requests a best-effort AI starter draft from the owned project;
 2. shows editable title, description, modification guide, and change summary;
-3. shows the model's reusable-change suggestions and customer-specific risk list;
+3. shows the model's reusable-change suggestions and derivative-specific risk list;
 4. captures a bounded thumbnail from the existing Preview renderer;
 5. offers `Create new starter`; if the caller owns the source canonical, also offer
    `Publish new version`;
-6. requires an explicit review checkbox when customer-specific risks are present.
+6. requires an explicit review checkbox when derivative-specific risks are present.
 
 Publishing snapshots current server-owned code/files but stores no messages. It
 does not delete or compact the current workspace. On success, return to the starter
 detail and display the new immutable version.
 
-The AI draft is advisory. It must not publish, edit code, or decide which customer
+The AI draft is advisory. It must not publish, edit code, or decide which derivative
 details are safe. Model failure leaves a fully usable manual form.
 
 **Verify**: tests cover create-new, owner update, non-owner denial, publisher denial,
@@ -393,7 +393,7 @@ model failure, risk acknowledgement, empty-message start, and old-version detect
 Replace “Projects are chats” with the new vocabulary:
 
 - **Starter** in user-facing action copy where “canonical” would sound internal;
-- **Workspace** or **recent work** for customer chats;
+- **Derivative design**, **workspace**, or **recent work** for mutable chats;
 - **Canonical design/version** in code and technical metadata only.
 
 Update README architecture, features, environment variables, and the distinction
@@ -425,13 +425,13 @@ small UI behavior where necessary. Required cases:
 Manual acceptance scenarios:
 
 1. Open `/studio` with existing projects: the starter Home is shown, not the latest
-   customer chat.
+   derivative chat.
 2. Start the same canonical twice: two independent workspaces, both with empty
    chats and identical initial artifacts.
 3. Customize one workspace: the canonical and second workspace are unchanged.
 4. Publish a reusable improvement as version 2: version-1 workspaces show an update
    hint but remain unchanged; new starts use version 2.
-5. Create a starter from a customer workspace: AI flags customer literals, user
+5. Create a canonical from a derivative workspace: AI flags derivative-only literals, user
    edits the draft, and the published canonical contains no conversation.
 
 ## Done criteria
@@ -470,13 +470,13 @@ Do not hide an automatic merge inside this release. After the library/publishing
 model is proven, add an `Improve original starter` flow:
 
 1. start a clean maintenance workspace from the canonical's latest version;
-2. compare the customer workspace to that version;
+2. compare the derivative workspace to that version;
 3. let AI propose a short list of reusable changes while explicitly identifying
-   customer-specific literals/files;
+   derivative-specific literals/files;
 4. let the user choose which proposals enter the clean maintenance conversation;
 5. publish the reviewed result as a new canonical version.
 
-This keeps the customer history out of the canonical and turns “port this useful
+This keeps the derivative history out of the canonical and turns “port this useful
 part back” into an explicit review operation rather than an unsafe merge.
 
 ## Maintenance notes

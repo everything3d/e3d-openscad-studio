@@ -93,23 +93,23 @@ export function StarterLibrary({
         <div className="flex flex-col justify-between gap-6 border-b border-white/10 pb-8 md:flex-row md:items-end">
           <div>
             <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.24em] text-[#6e9bff]">
-              Starter library
+              Canonical design library
             </div>
             <h1 className="max-w-2xl text-3xl font-semibold tracking-tight sm:text-4xl">
-              Start from a proven design.
+              Start from a canonical design.
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-white/55">
-              Choose a reusable model, then open a clean AI workspace for this customer.
-              The starter stays untouched.
+              Choose a reusable model, then create an independent derivative with AI.
+              The canonical design stays unchanged.
             </p>
           </div>
           <label className="relative block w-full md:w-80">
-            <span className="sr-only">Search starters</span>
+            <span className="sr-only">Search canonical designs</span>
             <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-white/35" />
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search starters"
+              placeholder="Search canonical designs"
               className="h-10 border-white/10 bg-white/[0.04] pl-9"
             />
           </label>
@@ -160,7 +160,7 @@ export function StarterLibrary({
                     {starter.description}
                   </p>
                   <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40">
-                    <span>Starter · v{starter.versionNumber}</span>
+                    <span>Canonical · v{starter.versionNumber}</span>
                     <span>{starter.fileCount} files</span>
                   </div>
                 </div>
@@ -170,7 +170,7 @@ export function StarterLibrary({
 
           {filtered.length === 0 && query && (
             <div className="mt-4 border border-white/10 p-8 text-center text-sm text-white/45">
-              No starters match “{query}”. Start blank or try a broader search.
+              No canonical designs match “{query}”. Start blank or try a broader search.
             </div>
           )}
         </section>
@@ -215,7 +215,7 @@ export function StarterLibrary({
             </div>
             <DialogHeader>
               <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#6e9bff]">
-                Starter · version {detail.versionNumber}
+                Canonical · version {detail.versionNumber}
               </div>
               <DialogTitle className="text-2xl">{detail.title}</DialogTitle>
               <DialogDescription className="leading-6">{detail.description}</DialogDescription>
@@ -232,7 +232,7 @@ export function StarterLibrary({
             )}
             <DialogFooter>
               <Button onClick={() => void start(detail.id)} disabled={starting === detail.id}>
-                {starting === detail.id ? 'Starting…' : 'Start design'}
+                {starting === detail.id ? 'Creating…' : 'Create derivative'}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -8,6 +8,6 @@ export async function POST(_req: Request, { params }: Params) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const project = await startCanonical((await params).id, userId)
-  if (!project) return NextResponse.json({ error: 'Starter not found' }, { status: 404 })
+  if (!project) return NextResponse.json({ error: 'Canonical design not found' }, { status: 404 })
   return NextResponse.json(project, { status: 201 })
 }

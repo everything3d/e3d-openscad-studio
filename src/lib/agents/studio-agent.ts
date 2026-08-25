@@ -44,7 +44,7 @@ export function createStudioAgent(
         ? `Workspace files available to import(): ${fileNames.join(', ')}`
         : 'This project has no workspace files.') +
       (modificationGuide
-        ? `\n\nDesign-specific guidance for this starter version:\n${modificationGuide}`
+        ? `\n\nDesign-specific guidance for this canonical version:\n${modificationGuide}`
         : ''),
     tools: {
       readOpenscad: createReadOpenscadTool(source),

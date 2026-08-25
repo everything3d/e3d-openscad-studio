@@ -23,8 +23,8 @@ const FEATURES = [
     body: 'The actual OpenSCAD compiler (WebAssembly, Manifold backend) renders live as you type. No install, no server round-trips.',
   },
   {
-    title: 'Starters stay reusable',
-    body: 'Begin from a proven design or a blank model. Every customer gets an independent workspace with its own chat, code, and files.',
+    title: 'Canonical designs stay reusable',
+    body: 'Begin from a canonical design or a blank model. Every derivative gets an independent workspace with its own chat, code, and files.',
   },
   {
     title: 'Print-ready export',

@@ -131,7 +131,7 @@ async function materializeProjectCopy(
     code: snapshot.code,
     forkedFrom: snapshot.sourceId,
     // Cross-account share imports remain standalone snapshots. Local workspace
-    // forks keep starter provenance so update hints continue to work.
+    // Forks keep canonical provenance so update hints continue to work.
     canonicalDesignId: sharedFrom ? null : (snapshot.canonicalDesignId ?? null),
     canonicalVersionId: sharedFrom ? null : (snapshot.canonicalVersionId ?? null),
     sharedFrom,

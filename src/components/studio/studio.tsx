@@ -259,7 +259,7 @@ export function Studio({
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
           <div className="truncate text-sm font-medium">
-            {project ? project.name : activeId ? 'Loading…' : 'Starter library'}
+            {project ? project.name : activeId ? 'Loading…' : 'Canonical designs'}
           </div>
           {project?.forkedFrom && (
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
@@ -277,7 +277,7 @@ export function Studio({
               className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300 hover:bg-amber-500/20"
               onClick={() => selectProject(null)}
             >
-              Newer starter available
+              Newer canonical available
             </button>
           )}
           <div className="ml-auto flex items-center gap-1">

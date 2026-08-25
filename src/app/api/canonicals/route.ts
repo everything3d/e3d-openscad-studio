@@ -18,10 +18,10 @@ export async function POST(req: Request) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const parsed = publishCanonicalSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Invalid starter', details: parsed.error.flatten() }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid canonical design', details: parsed.error.flatten() }, { status: 400 })
   }
   if (parsed.data.visibility === 'published' && !isCanonicalPublisher(userId)) {
-    return NextResponse.json({ error: 'Not allowed to publish shared starters' }, { status: 403 })
+    return NextResponse.json({ error: 'Not allowed to publish shared canonical designs' }, { status: 403 })
   }
   const canonical = await createCanonicalFromProject(parsed.data, userId)
   if (!canonical) return NextResponse.json({ error: 'Source workspace not found' }, { status: 404 })
