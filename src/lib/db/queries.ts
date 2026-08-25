@@ -1,11 +1,22 @@
 import { randomBytes } from 'node:crypto'
-import { and, asc, count, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, isNull, or, sql } from 'drizzle-orm'
 import { generateId, type UIMessage } from 'ai'
 import { db } from '.'
-import { messages, projects, projectShares, workspaceFiles } from './schema'
+import { buildCanonicalProjectSeed, publisherIds } from '../canonicals'
+import {
+  canonicalDesigns,
+  canonicalVersions,
+  messages,
+  projects,
+  projectShares,
+  workspaceFiles,
+} from './schema'
 import {
   DEFAULT_CODE,
   PLACEHOLDER_PROJECT_NAME,
+  type CanonicalDetail,
+  type CanonicalSummary,
+  type CanonicalVisibility,
   type FullProject,
   type ProjectSummary,
   type WorkspaceFile,
@@ -13,12 +24,50 @@ import {
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-interface ProjectSnapshot {
+interface ProjectArtifacts {
   sourceId: string
   name: string
   code: string
-  messages: UIMessage[]
   files: WorkspaceFile[]
+  canonicalDesignId: string | null
+  canonicalVersionId: string | null
+}
+
+interface ProjectSnapshot extends ProjectArtifacts {
+  messages: UIMessage[]
+}
+
+/** Load mutable design artifacts without bringing conversation history along. */
+async function loadProjectArtifacts(
+  tx: DbTransaction,
+  sourceId: string,
+  ownerId: string,
+): Promise<ProjectArtifacts | null> {
+  const [project] = await tx
+    .select()
+    .from(projects)
+    .where(and(eq(projects.id, sourceId), eq(projects.userId, ownerId)))
+  if (!project) return null
+
+  const fileRows = await tx
+    .select()
+    .from(workspaceFiles)
+    .where(eq(workspaceFiles.projectId, sourceId))
+    .orderBy(asc(workspaceFiles.addedAt))
+
+  return {
+    sourceId: project.id,
+    name: project.name,
+    code: project.code,
+    files: fileRows.map((row) => ({
+      name: row.name,
+      data: row.data,
+      size: row.size,
+      addedAt: row.addedAt.getTime(),
+    })),
+    canonicalDesignId: project.canonicalDesignId,
+    canonicalVersionId: project.canonicalVersionId,
+  }
 }
 
 /**
@@ -30,27 +79,16 @@ async function loadProjectSnapshot(
   sourceId: string,
   ownerId: string,
 ): Promise<ProjectSnapshot | null> {
-  const [project] = await tx
-    .select()
-    .from(projects)
-    .where(and(eq(projects.id, sourceId), eq(projects.userId, ownerId)))
-  if (!project) return null
+  const artifacts = await loadProjectArtifacts(tx, sourceId, ownerId)
+  if (!artifacts) return null
 
   const messageRows = await tx
     .select()
     .from(messages)
     .where(eq(messages.projectId, sourceId))
     .orderBy(asc(messages.seq))
-  const fileRows = await tx
-    .select()
-    .from(workspaceFiles)
-    .where(eq(workspaceFiles.projectId, sourceId))
-    .orderBy(asc(workspaceFiles.addedAt))
-
   return {
-    sourceId: project.id,
-    name: project.name,
-    code: project.code,
+    ...artifacts,
     messages: messageRows.map(
       (row) =>
         ({
@@ -60,12 +98,6 @@ async function loadProjectSnapshot(
           ...(row.metadata ? { metadata: row.metadata } : {}),
         }) as UIMessage,
     ),
-    files: fileRows.map((row) => ({
-      name: row.name,
-      data: row.data,
-      size: row.size,
-      addedAt: row.addedAt.getTime(),
-    })),
   }
 }
 
@@ -94,6 +126,10 @@ async function materializeProjectCopy(
     name,
     code: snapshot.code,
     forkedFrom: snapshot.sourceId,
+    // Cross-account share imports remain standalone snapshots. Local workspace
+    // forks keep starter provenance so update hints continue to work.
+    canonicalDesignId: sharedFrom ? null : (snapshot.canonicalDesignId ?? null),
+    canonicalVersionId: sharedFrom ? null : (snapshot.canonicalVersionId ?? null),
     sharedFrom,
   }
 
@@ -150,16 +186,29 @@ export async function listProjects(userId: string): Promise<ProjectSummary[]> {
       id: projects.id,
       name: projects.name,
       forkedFrom: projects.forkedFrom,
+      canonicalDesignId: projects.canonicalDesignId,
+      canonicalVersionId: projects.canonicalVersionId,
+      canonicalTitle: canonicalDesigns.title,
+      canonicalCurrentVersionId: canonicalDesigns.currentVersionId,
       updatedAt: projects.updatedAt,
       messageCount: count(messages.seq),
     })
     .from(projects)
     .leftJoin(messages, eq(messages.projectId, projects.id))
+    .leftJoin(canonicalDesigns, eq(canonicalDesigns.id, projects.canonicalDesignId))
     .where(eq(projects.userId, userId))
-    .groupBy(projects.id)
+    .groupBy(projects.id, canonicalDesigns.title, canonicalDesigns.currentVersionId)
     .orderBy(desc(projects.updatedAt))
 
-  return rows.map((r) => ({ ...r, updatedAt: r.updatedAt.getTime() }))
+  return rows.map(({ canonicalCurrentVersionId, ...r }) => ({
+    ...r,
+    canonicalHasNewerVersion: Boolean(
+      r.canonicalVersionId &&
+        canonicalCurrentVersionId &&
+        r.canonicalVersionId !== canonicalCurrentVersionId,
+    ),
+    updatedAt: r.updatedAt.getTime(),
+  }))
 }
 
 export async function getProject(id: string, userId: string): Promise<FullProject | null> {
@@ -175,11 +224,36 @@ export async function getProject(id: string, userId: string): Promise<FullProjec
     .where(eq(workspaceFiles.projectId, id))
     .orderBy(asc(workspaceFiles.addedAt))
 
+  let canonicalTitle: string | null = null
+  let canonicalVersionNumber: number | null = null
+  let canonicalHasNewerVersion = false
+  if (project.canonicalDesignId && project.canonicalVersionId) {
+    const [source] = await db
+      .select({
+        title: canonicalDesigns.title,
+        currentVersionId: canonicalDesigns.currentVersionId,
+        versionNumber: canonicalVersions.versionNumber,
+      })
+      .from(canonicalDesigns)
+      .leftJoin(canonicalVersions, eq(canonicalVersions.id, project.canonicalVersionId))
+      .where(eq(canonicalDesigns.id, project.canonicalDesignId))
+    canonicalTitle = source?.title ?? null
+    canonicalVersionNumber = source?.versionNumber ?? null
+    canonicalHasNewerVersion = Boolean(
+      source?.currentVersionId && source.currentVersionId !== project.canonicalVersionId,
+    )
+  }
+
   return {
     id: project.id,
     name: project.name,
     code: project.code,
     forkedFrom: project.forkedFrom,
+    canonicalDesignId: project.canonicalDesignId,
+    canonicalVersionId: project.canonicalVersionId,
+    canonicalTitle,
+    canonicalVersionNumber,
+    canonicalHasNewerVersion,
     files: files.map((f) => ({
       name: f.name,
       data: f.data,
@@ -225,6 +299,11 @@ export async function createProject(userId: string, name?: string): Promise<Full
     name: row.name,
     code: row.code,
     forkedFrom: row.forkedFrom,
+    canonicalDesignId: row.canonicalDesignId,
+    canonicalVersionId: row.canonicalVersionId,
+    canonicalTitle: null,
+    canonicalVersionNumber: null,
+    canonicalHasNewerVersion: false,
     files: [],
     createdAt: row.createdAt.getTime(),
     updatedAt: row.updatedAt.getTime(),
@@ -243,6 +322,258 @@ export async function forkProject(sourceId: string, userId: string): Promise<Ful
   })
 
   return id ? getProject(id, userId) : null
+}
+
+type CanonicalDesignRecord = typeof canonicalDesigns.$inferSelect
+type CanonicalVersionRecord = typeof canonicalVersions.$inferSelect
+
+function toCanonicalSummary(
+  design: CanonicalDesignRecord,
+  version: CanonicalVersionRecord,
+  userId: string,
+): CanonicalSummary {
+  const files = version.files as WorkspaceFile[]
+  return {
+    id: design.id,
+    title: design.title,
+    description: design.description,
+    category: design.category,
+    visibility: design.visibility as CanonicalVisibility,
+    currentVersionId: design.currentVersionId,
+    versionNumber: version.versionNumber,
+    thumbnail: version.thumbnail,
+    fileCount: files.length,
+    isOwner: design.ownerId === userId,
+    updatedAt: design.updatedAt.getTime(),
+  }
+}
+
+function toCanonicalDetail(
+  design: CanonicalDesignRecord,
+  version: CanonicalVersionRecord,
+  userId: string,
+): CanonicalDetail {
+  return {
+    ...toCanonicalSummary(design, version, userId),
+    code: version.code,
+    files: version.files as WorkspaceFile[],
+    modificationGuide: version.modificationGuide,
+    changeSummary: version.changeSummary,
+    createdAt: design.createdAt.getTime(),
+  }
+}
+
+function readableCanonical(userId: string) {
+  return or(eq(canonicalDesigns.ownerId, userId), eq(canonicalDesigns.visibility, 'published'))
+}
+
+export function isCanonicalPublisher(userId: string): boolean {
+  return publisherIds(process.env.CANONICAL_PUBLISHER_USER_IDS).includes(userId)
+}
+
+export async function listCanonicals(userId: string): Promise<CanonicalSummary[]> {
+  const rows = await db
+    .select({ design: canonicalDesigns, version: canonicalVersions })
+    .from(canonicalDesigns)
+    .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
+    .where(and(isNull(canonicalDesigns.archivedAt), readableCanonical(userId)))
+    .orderBy(desc(canonicalDesigns.updatedAt))
+  return rows.map(({ design, version }) => toCanonicalSummary(design, version, userId))
+}
+
+export async function getCanonical(id: string, userId: string): Promise<CanonicalDetail | null> {
+  const [row] = await db
+    .select({ design: canonicalDesigns, version: canonicalVersions })
+    .from(canonicalDesigns)
+    .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
+    .where(
+      and(
+        eq(canonicalDesigns.id, id),
+        isNull(canonicalDesigns.archivedAt),
+        readableCanonical(userId),
+      ),
+    )
+  return row ? toCanonicalDetail(row.design, row.version, userId) : null
+}
+
+export interface PublishCanonicalInput {
+  projectId: string
+  title: string
+  description: string
+  category?: string | null
+  modificationGuide: string
+  thumbnail?: string | null
+  changeSummary?: string | null
+  visibility?: CanonicalVisibility
+}
+
+export async function createCanonicalFromProject(
+  input: PublishCanonicalInput,
+  userId: string,
+): Promise<CanonicalDetail | null> {
+  if (input.visibility === 'published' && !isCanonicalPublisher(userId)) return null
+  const canonicalId = generateId()
+  const versionId = generateId()
+  const created = await db.transaction(async (tx) => {
+    const artifacts = await loadProjectArtifacts(tx, input.projectId, userId)
+    if (!artifacts) return false
+    await tx.insert(canonicalDesigns).values({
+      id: canonicalId,
+      ownerId: userId,
+      title: input.title,
+      description: input.description,
+      category: input.category ?? null,
+      visibility: input.visibility ?? 'private',
+      currentVersionId: versionId,
+    })
+    await tx.insert(canonicalVersions).values({
+      id: versionId,
+      canonicalDesignId: canonicalId,
+      versionNumber: 1,
+      code: artifacts.code,
+      files: artifacts.files,
+      modificationGuide: input.modificationGuide,
+      thumbnail: input.thumbnail ?? null,
+      changeSummary: input.changeSummary ?? null,
+      sourceProjectId: input.projectId,
+      createdBy: userId,
+    })
+    return true
+  })
+  return created ? getCanonical(canonicalId, userId) : null
+}
+
+export async function addCanonicalVersionFromProject(
+  canonicalId: string,
+  input: PublishCanonicalInput,
+  userId: string,
+): Promise<CanonicalDetail | null> {
+  if (input.visibility === 'published' && !isCanonicalPublisher(userId)) return null
+  const versionId = generateId()
+  const created = await db.transaction(async (tx) => {
+    const [design] = await tx
+      .select()
+      .from(canonicalDesigns)
+      .where(
+        and(
+          eq(canonicalDesigns.id, canonicalId),
+          eq(canonicalDesigns.ownerId, userId),
+          isNull(canonicalDesigns.archivedAt),
+        ),
+      )
+      .for('update')
+    if (!design) return false
+
+    const [current] = await tx
+      .select({ versionNumber: canonicalVersions.versionNumber })
+      .from(canonicalVersions)
+      .where(eq(canonicalVersions.id, design.currentVersionId))
+    if (!current) throw new Error('Canonical current version is missing')
+
+    const artifacts = await loadProjectArtifacts(tx, input.projectId, userId)
+    if (!artifacts) return false
+    await tx.insert(canonicalVersions).values({
+      id: versionId,
+      canonicalDesignId: canonicalId,
+      versionNumber: current.versionNumber + 1,
+      code: artifacts.code,
+      files: artifacts.files,
+      modificationGuide: input.modificationGuide,
+      thumbnail: input.thumbnail ?? null,
+      changeSummary: input.changeSummary ?? null,
+      sourceProjectId: input.projectId,
+      createdBy: userId,
+    })
+    await tx
+      .update(canonicalDesigns)
+      .set({
+        title: input.title,
+        description: input.description,
+        category: input.category === undefined ? design.category : input.category,
+        visibility: input.visibility ?? design.visibility,
+        currentVersionId: versionId,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(canonicalDesigns.id, canonicalId))
+    return true
+  })
+  return created ? getCanonical(canonicalId, userId) : null
+}
+
+export async function updateCanonicalMetadata(
+  id: string,
+  userId: string,
+  patch: {
+    title?: string
+    description?: string
+    category?: string | null
+    visibility?: CanonicalVisibility
+    archived?: boolean
+  },
+): Promise<boolean> {
+  if (patch.visibility === 'published' && !isCanonicalPublisher(userId)) return false
+  const values: Record<string, unknown> = { updatedAt: sql`now()` }
+  if (patch.title !== undefined) values.title = patch.title
+  if (patch.description !== undefined) values.description = patch.description
+  if (patch.category !== undefined) values.category = patch.category
+  if (patch.visibility !== undefined) values.visibility = patch.visibility
+  if (patch.archived !== undefined) values.archivedAt = patch.archived ? sql`now()` : null
+  const rows = await db
+    .update(canonicalDesigns)
+    .set(values)
+    .where(and(eq(canonicalDesigns.id, id), eq(canonicalDesigns.ownerId, userId)))
+    .returning({ id: canonicalDesigns.id })
+  return rows.length > 0
+}
+
+export async function startCanonical(id: string, userId: string): Promise<FullProject | null> {
+  const projectId = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ design: canonicalDesigns, version: canonicalVersions })
+      .from(canonicalDesigns)
+      .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
+      .where(
+        and(
+          eq(canonicalDesigns.id, id),
+          isNull(canonicalDesigns.archivedAt),
+          readableCanonical(userId),
+        ),
+      )
+    if (!row) return null
+    const newId = generateId()
+    await tx.insert(projects).values({
+      id: newId,
+      userId,
+      ...buildCanonicalProjectSeed({
+        id: row.design.id,
+        title: row.design.title,
+        versionId: row.version.id,
+        code: row.version.code,
+      }),
+    })
+    const files = row.version.files as WorkspaceFile[]
+    if (files.length) {
+      await tx.insert(workspaceFiles).values(
+        files.map((file) => ({
+          projectId: newId,
+          name: file.name,
+          data: file.data,
+          size: file.size,
+          addedAt: new Date(file.addedAt),
+        })),
+      )
+    }
+    return newId
+  })
+  return projectId ? getProject(projectId, userId) : null
+}
+
+export async function getCanonicalModificationGuide(versionId: string): Promise<string | null> {
+  const [version] = await db
+    .select({ modificationGuide: canonicalVersions.modificationGuide })
+    .from(canonicalVersions)
+    .where(eq(canonicalVersions.id, versionId))
+  return version?.modificationGuide ?? null
 }
 
 export interface ProjectShareLink {

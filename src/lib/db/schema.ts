@@ -9,10 +9,24 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
 
+/** A reusable design identity. Its current version is the source for new workspaces. */
+export const canonicalDesigns = pgTable('canonical_designs', {
+  id: text('id').primaryKey(),
+  ownerId: text('owner_id').notNull(),
+  title: text('title').notNull(),
+  description: text('description').notNull(),
+  category: text('category'),
+  visibility: text('visibility').notNull().default('private'),
+  /** Kept as a logical pointer to avoid a circular FK with canonical_versions. */
+  currentVersionId: text('current_version_id').notNull(),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 /**
- * A project *is* a chat: conversation history, the current OpenSCAD source,
- * and the workspace files it imports. Forking clones a project into a new
- * one that remembers its ancestor.
+ * A mutable customer workspace: conversation history, current OpenSCAD source,
+ * and imported files. It may have been seeded from an immutable canonical version.
  */
 export const projects = pgTable(
   'projects',
@@ -23,12 +37,43 @@ export const projects = pgTable(
     name: text('name').notNull(),
     code: text('code').notNull(),
     forkedFrom: text('forked_from'),
+    canonicalDesignId: text('canonical_design_id').references(() => canonicalDesigns.id, {
+      onDelete: 'set null',
+    }),
+    /** Logical immutable-version pointer; canonical versions are never deleted. */
+    canonicalVersionId: text('canonical_version_id'),
     /** Internal share snapshot id, set only on cross-account imports. */
     sharedFrom: text('shared_from'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex('projects_user_shared_from_unique').on(t.userId, t.sharedFrom)],
+)
+
+/** Immutable artifact and guidance snapshot published under a canonical design. */
+export const canonicalVersions = pgTable(
+  'canonical_versions',
+  {
+    id: text('id').primaryKey(),
+    canonicalDesignId: text('canonical_design_id')
+      .notNull()
+      .references(() => canonicalDesigns.id, { onDelete: 'cascade' }),
+    versionNumber: integer('version_number').notNull(),
+    code: text('code').notNull(),
+    files: jsonb('files').notNull(),
+    modificationGuide: text('modification_guide').notNull(),
+    thumbnail: text('thumbnail'),
+    changeSummary: text('change_summary'),
+    sourceProjectId: text('source_project_id'),
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('canonical_versions_design_version_unique').on(
+      t.canonicalDesignId,
+      t.versionNumber,
+    ),
+  ],
 )
 
 /**
@@ -91,6 +136,8 @@ export const projectShares = pgTable('project_shares', {
 })
 
 export type ProjectRow = typeof projects.$inferSelect
+export type CanonicalDesignRow = typeof canonicalDesigns.$inferSelect
+export type CanonicalVersionRow = typeof canonicalVersions.$inferSelect
 export type MessageRow = typeof messages.$inferSelect
 export type WorkspaceFileRow = typeof workspaceFiles.$inferSelect
 export type ProjectShareRow = typeof projectShares.$inferSelect

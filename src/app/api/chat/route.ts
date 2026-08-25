@@ -1,7 +1,7 @@
 import { createAgentUIStreamResponse, generateId, validateUIMessages, type UIMessage } from 'ai'
 import { auth } from '@clerk/nextjs/server'
 import { createStudioAgent, studioTools, type StudioUIMessage } from '@/lib/agents/studio-agent'
-import { getProject, saveChat } from '@/lib/db/queries'
+import { getCanonicalModificationGuide, getProject, saveChat } from '@/lib/db/queries'
 
 export const maxDuration = 120
 
@@ -52,9 +52,13 @@ export async function POST(req: Request) {
   // persisted after a debounce, so the row can be stale at send time.
   const currentCode = typeof liveCode === 'string' ? liveCode : project.code
 
+  const modificationGuide = project.canonicalVersionId
+    ? await getCanonicalModificationGuide(project.canonicalVersionId)
+    : null
   const agent = createStudioAgent(
     currentCode,
     project.files.map((f) => f.name),
+    modificationGuide,
   )
 
   return createAgentUIStreamResponse({

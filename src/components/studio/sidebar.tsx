@@ -1,6 +1,6 @@
 'use client'
 
-import { GitForkIcon, PencilIcon, Trash2Icon } from 'lucide-react'
+import { GitForkIcon, LayoutGridIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { ProjectSummary } from '@/lib/types'
@@ -8,6 +8,8 @@ import type { ProjectSummary } from '@/lib/types'
 interface Props {
   projects: ProjectSummary[]
   activeId: string | null
+  homeActive: boolean
+  onHome: () => void
   onSelect: (id: string) => void
   onNew: () => void
   onFork: (id: string) => void
@@ -18,6 +20,8 @@ interface Props {
 export function Sidebar({
   projects,
   activeId,
+  homeActive,
+  onHome,
   onSelect,
   onNew,
   onFork,
@@ -34,12 +38,25 @@ export function Sidebar({
           <img src="/brand/e3d-mark-white.png" alt="Everything 3D" className="size-5" />
           <span>E3D Studio</span>
         </div>
-        <Button size="sm" onClick={onNew} title="New project">
-          + New
+        <Button size="sm" onClick={onNew} title="Blank design">
+          <PlusIcon className="size-3.5" /> Blank
         </Button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
+        <button
+          className={cn(
+            'mb-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm',
+            homeActive ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50',
+          )}
+          onClick={onHome}
+        >
+          <LayoutGridIcon className="size-4" />
+          Starter library
+        </button>
+        <div className="px-2 pb-2 pt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+          Recent work
+        </div>
         {sorted.length === 0 && (
           <div className="p-3 text-sm text-muted-foreground">No projects yet.</div>
         )}
@@ -94,8 +111,8 @@ export function Sidebar({
         ))}
       </div>
 
-      <div className="border-t p-3 text-xs text-muted-foreground">
-        Projects are chats. Fork any one to branch a new idea.
+      <div className="border-t p-3 text-xs leading-5 text-muted-foreground">
+        Starters stay clean. Each customer gets an independent workspace.
       </div>
     </aside>
   )

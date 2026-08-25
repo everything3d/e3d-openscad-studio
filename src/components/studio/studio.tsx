@@ -7,6 +7,8 @@ import { useRenderer } from '@/lib/openscad/useRenderer'
 import { meshTo3MF } from '@/lib/openscad/threemf'
 import {
   PLACEHOLDER_PROJECT_NAME,
+  type CanonicalDetail,
+  type CanonicalSummary,
   type FullProject,
   type ProjectSummary,
   type WorkspaceFile,
@@ -18,25 +20,27 @@ import { CodeEditor } from './code-editor'
 import { Preview } from './preview'
 import { ShareProjectDialog } from './share-project-dialog'
 import { WorkspacePanel } from './workspace-panel'
+import { StarterLibrary } from './starter-library'
+import { SaveAsStarterDialog } from './save-as-starter-dialog'
 
 type OpenProject = FullProject & { messages: StudioUIMessage[] }
 type RightTab = 'preview' | 'code' | 'files'
 
 export function Studio({
   initialProjects,
+  initialCanonicals,
   initialActiveId = null,
 }: {
   initialProjects: ProjectSummary[]
+  initialCanonicals: CanonicalSummary[]
   initialActiveId?: string | null
 }) {
   const [projects, setProjects] = useState<ProjectSummary[]>(initialProjects)
-  const [activeId, setActiveId] = useState<string | null>(
-    initialProjects.some((item) => item.id === initialActiveId)
-      ? initialActiveId
-      : (initialProjects[0]?.id ?? null),
-  )
+  const [canonicals, setCanonicals] = useState<CanonicalSummary[]>(initialCanonicals)
+  const [activeId, setActiveId] = useState<string | null>(initialActiveId)
   const [project, setProject] = useState<OpenProject | null>(null)
   const [rightTab, setRightTab] = useState<RightTab>('preview')
+  const [thumbnail, setThumbnail] = useState<string | null>(null)
 
   const { state: renderState, render, exportModel } = useRenderer()
 
@@ -46,9 +50,20 @@ export function Studio({
     if (res.ok) setProjects(await res.json())
   }, [])
 
+  const refreshCanonicals = useCallback(async () => {
+    const res = await fetch('/api/canonicals')
+    if (res.ok) setCanonicals(await res.json())
+  }, [])
+
   const openProject = useCallback(async (id: string) => {
+    setProject(null)
     const res = await fetch(`/api/projects/${id}`)
     if (res.ok) setProject(await res.json())
+  }, [])
+
+  const selectProject = useCallback((id: string | null) => {
+    setActiveId(id)
+    window.history.replaceState({}, '', id ? `/studio?project=${encodeURIComponent(id)}` : '/studio')
   }, [])
 
   /**
@@ -67,32 +82,14 @@ export function Studio({
     setProjects((list) => list.map((p) => (p.id === id ? { ...p, name } : p)))
   }, [])
 
-  // ---- bootstrap: open the active project, create one if none exist -------
-  const bootedRef = useRef(false)
+  // ---- open the requested workspace; null is the persistent starter home ---
   useEffect(() => {
     if (activeId) {
       void openProject(activeId)
       return
     }
-    if (!bootedRef.current && projects.length === 0) {
-      bootedRef.current = true
-      void (async () => {
-        // Unnamed on purpose: the first message names it.
-        const res = await fetch('/api/projects', { method: 'POST' })
-        const p: FullProject = await res.json()
-        setProjects([
-          {
-            id: p.id,
-            name: p.name,
-            forkedFrom: p.forkedFrom,
-            messageCount: 0,
-            updatedAt: p.updatedAt,
-          },
-        ])
-        setActiveId(p.id)
-      })()
-    }
-  }, [activeId, openProject, projects.length])
+    setProject(null)
+  }, [activeId, openProject])
 
   // ---- live render (debounced) --------------------------------------------
   useEffect(() => {
@@ -167,8 +164,17 @@ export function Studio({
   // ---- project list actions -------------------------------------------------
   const handleNew = async () => {
     const res = await fetch('/api/projects', { method: 'POST' })
+    if (!res.ok) return
     const p: FullProject = await res.json()
-    setActiveId(p.id)
+    selectProject(p.id)
+    await refreshList()
+  }
+
+  const handleStart = async (canonicalId: string) => {
+    const res = await fetch(`/api/canonicals/${canonicalId}/start`, { method: 'POST' })
+    if (!res.ok) return
+    const p: FullProject = await res.json()
+    selectProject(p.id)
     await refreshList()
   }
 
@@ -180,7 +186,7 @@ export function Studio({
     })
     if (res.ok) {
       const p: FullProject = await res.json()
-      setActiveId(p.id)
+      selectProject(p.id)
       await refreshList()
     }
   }
@@ -201,8 +207,22 @@ export function Studio({
     setProjects(next)
     if (id === activeId) {
       setProject(null)
-      setActiveId(next[0]?.id ?? null)
+      selectProject(null)
     }
+  }
+
+  const handlePublished = (canonical: CanonicalDetail) => {
+    setCanonicals((items) => {
+      const summary: CanonicalSummary = canonical
+      const exists = items.some((item) => item.id === summary.id)
+      return exists
+        ? items.map((item) => (item.id === summary.id ? summary : item))
+        : [summary, ...items]
+    })
+    if (project?.canonicalDesignId === canonical.id) {
+      setProject((value) => (value ? { ...value, canonicalHasNewerVersion: true } : value))
+    }
+    void refreshCanonicals()
   }
 
   const tabs: { id: RightTab; label: string }[] = [
@@ -219,7 +239,9 @@ export function Studio({
       <Sidebar
         projects={projects}
         activeId={activeId}
-        onSelect={setActiveId}
+        homeActive={!activeId}
+        onHome={() => selectProject(null)}
+        onSelect={(id) => selectProject(id)}
         onNew={() => void handleNew()}
         onFork={(id) => void handleFork(id)}
         onRename={(id, name) => void handleRename(id, name)}
@@ -229,20 +251,58 @@ export function Studio({
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
           <div className="truncate text-sm font-medium">
-            {project ? project.name : activeId ? 'Loading…' : 'No project'}
+            {project ? project.name : activeId ? 'Loading…' : 'Starter library'}
           </div>
           {project?.forkedFrom && (
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
               forked
             </span>
           )}
+          {project?.canonicalTitle && (
+            <span className="rounded bg-[#6e9bff]/10 px-1.5 py-0.5 font-mono text-[10px] uppercase text-[#8eb0ff]">
+              {project.canonicalTitle}
+              {project.canonicalVersionNumber ? ` · v${project.canonicalVersionNumber}` : ''}
+            </span>
+          )}
+          {project?.canonicalHasNewerVersion && (
+            <button
+              className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300 hover:bg-amber-500/20"
+              onClick={() => selectProject(null)}
+            >
+              Newer starter available
+            </button>
+          )}
           <div className="ml-auto flex items-center gap-1">
+            {project && (
+              <SaveAsStarterDialog
+                project={project}
+                thumbnail={thumbnail}
+                canUpdateSource={Boolean(
+                  project.canonicalDesignId &&
+                    canonicals.some(
+                      (item) => item.id === project.canonicalDesignId && item.isOwner,
+                    ),
+                )}
+                onPublished={handlePublished}
+              />
+            )}
             {project && <ShareProjectDialog projectId={project.id} />}
             <UserButton />
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1">
+        {!activeId ? (
+          <div className="min-h-0 flex-1">
+            <StarterLibrary
+              canonicals={canonicals}
+              projects={projects}
+              onBlank={handleNew}
+              onStart={handleStart}
+              onOpenProject={(id) => selectProject(id)}
+            />
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1">
           <section className="flex w-[26rem] shrink-0 flex-col border-r">
             {project ? (
               <ChatPanel
@@ -260,7 +320,7 @@ export function Studio({
               />
             ) : (
               <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                {activeId ? 'Loading…' : 'Create a project to get started.'}
+                Loading workspace…
               </div>
             )}
           </section>
@@ -284,7 +344,11 @@ export function Studio({
             </div>
             <div className="relative min-h-0 flex-1">
               <div className={cn('absolute inset-0', rightTab !== 'preview' && 'hidden')}>
-                <Preview render={renderState} onExport={(f) => void handleExport(f)} />
+                <Preview
+                  render={renderState}
+                  onExport={(f) => void handleExport(f)}
+                  onThumbnailReady={setThumbnail}
+                />
               </div>
               <div className={cn('absolute inset-0', rightTab !== 'code' && 'hidden')}>
                 {project && <CodeEditor value={project.code} onChange={handleCodeEdit} />}
@@ -297,6 +361,7 @@ export function Studio({
             </div>
           </section>
         </div>
+        )}
       </main>
     </div>
   )

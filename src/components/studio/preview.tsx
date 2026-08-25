@@ -12,6 +12,7 @@ import { DEFAULT_FACE_COLOR, type ParsedMesh } from '@/lib/openscad/off'
 interface Props {
   render: RenderState
   onExport: (format: 'stl' | '3mf') => void
+  onThumbnailReady?: (thumbnail: string | null) => void
 }
 
 /**
@@ -60,13 +61,14 @@ const badgeLabels: Record<RenderState['status'], string> = {
   error: 'Error',
 }
 
-export function Preview({ render, onExport }: Props) {
+export function Preview({ render, onExport, onThumbnailReady }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const meshRef = useRef<THREE.Mesh | null>(null)
   const gridRef = useRef<THREE.GridHelper | null>(null)
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const [webglError, setWebglError] = useState(false)
 
   // Set up the scene once.
@@ -78,7 +80,7 @@ export function Preview({ render, onExport }: Props) {
     // policy). Fail soft with a message instead of crashing the app.
     let renderer: THREE.WebGLRenderer
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true })
+      renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
     } catch {
       setWebglError(true)
       return
@@ -87,6 +89,7 @@ export function Preview({ render, onExport }: Props) {
     const scene = new THREE.Scene()
     scene.background = new THREE.Color('#0f1115')
     sceneRef.current = scene
+    rendererRef.current = renderer
 
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000)
     camera.position.set(80, 60, 80)
@@ -138,6 +141,7 @@ export function Preview({ render, onExport }: Props) {
       ro.disconnect()
       controls.dispose()
       renderer.dispose()
+      rendererRef.current = null
       host.removeChild(renderer.domElement)
     }
   }, [])
@@ -186,7 +190,28 @@ export function Preview({ render, onExport }: Props) {
       const grid = gridRef.current
       if (grid) grid.position.y = -r
     }
-  }, [render.mesh])
+
+    const renderer = rendererRef.current
+    if (renderer && onThumbnailReady) {
+      renderer.render(scene, camera)
+      const source = renderer.domElement
+      const canvas = document.createElement('canvas')
+      canvas.width = 640
+      canvas.height = 400
+      const context = canvas.getContext('2d')
+      if (context) {
+        context.fillStyle = '#0f1115'
+        context.fillRect(0, 0, canvas.width, canvas.height)
+        const scale = Math.min(canvas.width / source.width, canvas.height / source.height)
+        const width = source.width * scale
+        const height = source.height * scale
+        context.drawImage(source, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height)
+        onThumbnailReady(canvas.toDataURL('image/jpeg', 0.72))
+      } else {
+        onThumbnailReady(null)
+      }
+    }
+  }, [render.mesh, onThumbnailReady])
 
   return (
     <div className="relative h-full w-full overflow-hidden">
