@@ -25,7 +25,7 @@ export const canonicalDesigns = pgTable('canonical_designs', {
 })
 
 /**
- * A mutable customer workspace: conversation history, current OpenSCAD source,
+ * A mutable derivative workspace: conversation history, current OpenSCAD source,
  * and imported files. It may have been seeded from an immutable canonical version.
  */
 export const projects = pgTable(

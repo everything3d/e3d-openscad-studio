@@ -8,18 +8,18 @@ const draftSchema = z.object({
   description: z.string(),
   modificationGuide: z.string(),
   reusableChanges: z.array(z.string()).max(8),
-  customerSpecificRisks: z.array(z.string()).max(8),
+  derivativeSpecificRisks: z.array(z.string()).max(8),
 })
 
-const SYSTEM = `You distill an AI-assisted OpenSCAD customer workspace into metadata for a reusable starter design.
-Return one JSON object and nothing else with these keys: title, description, modificationGuide, reusableChanges, customerSpecificRisks.
+const SYSTEM = `You distill an AI-assisted OpenSCAD derivative workspace into metadata for a reusable canonical design.
+Return one JSON object and nothing else with these keys: title, description, modificationGuide, reusableChanges, derivativeSpecificRisks.
 
 Rules:
-- Title: 2-6 words naming the reusable design, not the customer.
-- Description: 1-3 sentences explaining what the starter makes and when it is useful.
+- Title: 2-6 words naming the reusable design, without derivative-specific details.
+- Description: 1-3 sentences explaining what the canonical design makes and when it is useful.
 - modificationGuide: concise instructions for a future modeling agent: common modifications, important parameters, invariants, required files, and gotchas.
 - reusableChanges: improvements in this workspace that are broadly useful.
-- customerSpecificRisks: names, logos, exact order dimensions, one-off geometry, or imported files that should be reviewed before publishing.
+- derivativeSpecificRisks: names, logos, exact one-off dimensions, bespoke geometry, or imported files that should be reviewed before saving.
 - Never claim the design is safe to publish. The human must review it.`
 
 function textHistory(messages: UIMessage[]): string {
@@ -46,7 +46,7 @@ function fallback(name: string): StarterDraft {
     description: '',
     modificationGuide: '',
     reusableChanges: [],
-    customerSpecificRisks: [],
+    derivativeSpecificRisks: [],
   }
 }
 

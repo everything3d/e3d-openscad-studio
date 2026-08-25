@@ -62,7 +62,7 @@ describe('POST /api/canonicals', () => {
         description: 'A reusable plaque.',
         modificationGuide: 'Change the text parameter.',
         visibility: 'private',
-        messages: [{ role: 'user', parts: [{ type: 'text', text: 'customer secret' }] }],
+        messages: [{ role: 'user', parts: [{ type: 'text', text: 'private detail' }] }],
       }),
     )
 

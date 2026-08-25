@@ -1,8 +1,8 @@
 # E3D OpenSCAD Studio
 
-An AI-powered [OpenSCAD](https://openscad.org/) editor with live 3D preview. You
-choose a proven starter (or begin blank), then describe what you want in a clean
-customer workspace. An AI agent writes the OpenSCAD code and renders the model in
+An AI-powered [OpenSCAD](https://openscad.org/) editor with live 3D preview. Choose
+a canonical design (or begin blank), then describe what you want in an independent
+derivative workspace. An AI agent writes the OpenSCAD code and renders the model in
 real time.
 
 ## Features
@@ -19,14 +19,14 @@ real time.
   Bambu Studio, Orca, and PrusaSlicer map to filaments for multi-material printing.
 - **Editable code** — a CodeMirror editor with OpenSCAD syntax highlighting. Edit the
   code by hand and the preview re-renders automatically.
-- **Starter library** — reusable, versioned canonical designs hold code, files,
+- **Canonical design library** — reusable, versioned canonical designs hold code, files,
   descriptions, previews, and design-specific instructions for the agent. They do
   not contain chat history.
-- **Clean customer workspaces** — starting from a canonical copies its current code
-  and files into an independent workspace with an empty chat. Blank designs remain
-  available too.
-- **Save as starter** — distill a customer workspace into reviewed reusable metadata,
-  then create a private starter or publish a new immutable version without copying
+- **Independent derivative workspaces** — creating a derivative copies the canonical's
+  current code and files into an independent workspace with an empty chat. Blank
+  designs remain available too.
+- **Save as canonical** — distill a derivative workspace into reviewed reusable metadata,
+  then create a private canonical or publish a new immutable version without copying
   the conversation.
 - **Workspace fork** — clone an in-progress workspace (code + history + files) when
   you intentionally want to branch the same conversation.
@@ -103,21 +103,21 @@ npm run db:migrate   # apply migrations
    (Production, Preview, and Development), then redeploy so it takes effect.
 3. Run migrations against the production database: `POSTGRES_URL=... npm run db:migrate`.
 4. Optionally set `CANONICAL_PUBLISHER_USER_IDS` to the Clerk user IDs allowed to
-   make starters visible to every signed-in user. Other users can create private
-   starters without this setting.
+   make canonical designs visible to every signed-in user. Other users can create
+   private canonicals without this setting.
 
-## Starter workflow
+## Canonical and derivative workflow
 
-Opening `/studio` shows the starter library rather than automatically reopening the
-latest customer job. Choose **Blank design** or inspect a starter and select
-**Start design**. A starter-created workspace records the exact version it came from;
-new starter releases appear as a non-destructive update hint while existing work
-continues unchanged.
+Opening `/studio` shows the canonical design library rather than automatically
+reopening the latest derivative. Choose **Blank design** or inspect a canonical and
+select **Create derivative**. A derivative records the exact canonical version it
+came from; new canonical versions appear as a non-destructive update hint while
+existing work continues unchanged.
 
-Use **Save as starter** in a workspace to draft a title, description, reusable-change
-summary, and agent guidance. Review any customer-specific warnings before saving.
-Publishing snapshots only the current code and workspace files — messages never
-become part of a starter.
+Use **Save as canonical** in a workspace to draft a title, description,
+reusable-change summary, and agent guidance. Review any derivative-specific warnings
+before saving. Publishing snapshots only the current code and workspace files —
+messages never become part of a canonical design.
 
 ## Tech stack
 

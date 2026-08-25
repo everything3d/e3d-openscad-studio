@@ -21,10 +21,10 @@ reason)
 ## Findings considered and rejected
 
 - **Make selected projects read-only**: rejected because it preserves the incorrect
-  project/chat coupling and does not create clean customer workspaces.
-- **Copy a canonical's full chat into every new customer job**: rejected because it
+  project/chat coupling and does not create clean derivative workspaces.
+- **Copy a canonical's full chat into every new derivative**: rejected because it
   recreates the cost and context-pollution problem.
-- **Automatically merge customer work upstream**: rejected for the MVP because code
-  and files can contain customer-specific details; publication must be reviewed.
+- **Automatically merge derivative work upstream**: rejected for the MVP because code
+  and files can contain derivative-specific details; publication must be reviewed.
 - **Replace the public marketing page immediately**: deferred until the signed-in
   starter library proves the interaction and access model.
