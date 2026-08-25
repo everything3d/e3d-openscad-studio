@@ -28,7 +28,11 @@ Rules:
  * be the LIVE editor content sent by the client, not the (possibly stale)
  * DB row — the read/write tools share a source box seeded from it.
  */
-export function createStudioAgent(currentCode: string, fileNames: string[]) {
+export function createStudioAgent(
+  currentCode: string,
+  fileNames: string[],
+  modificationGuide?: string | null,
+) {
   const source = { code: currentCode }
   return new ToolLoopAgent({
     // Override with STUDIO_MODEL for local testing (any OpenRouter model id).
@@ -38,7 +42,10 @@ export function createStudioAgent(currentCode: string, fileNames: string[]) {
       `Current OpenSCAD source for this project:\n\n\`\`\`scad\n${currentCode}\n\`\`\`\n\n` +
       (fileNames.length
         ? `Workspace files available to import(): ${fileNames.join(', ')}`
-        : 'This project has no workspace files.'),
+        : 'This project has no workspace files.') +
+      (modificationGuide
+        ? `\n\nDesign-specific guidance for this starter version:\n${modificationGuide}`
+        : ''),
     tools: {
       readOpenscad: createReadOpenscadTool(source),
       writeOpenscad: createWriteOpenscadTool(source),

@@ -56,3 +56,19 @@ export function namingModel() {
     parseModelList(process.env.NAMING_MODEL_FALLBACKS),
   )
 }
+
+/**
+ * The starter-metadata model. It defaults to the naming model because both are
+ * short, structured tasks, while still allowing an independent routing chain.
+ */
+export function starterDraftModel() {
+  return chatModel(
+    process.env.STARTER_DRAFT_MODEL ??
+      process.env.NAMING_MODEL ??
+      'openai/gpt-5.4-nano',
+    parseModelList(
+      process.env.STARTER_DRAFT_MODEL_FALLBACKS ??
+        process.env.NAMING_MODEL_FALLBACKS,
+    ),
+  )
+}

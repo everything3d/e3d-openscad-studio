@@ -15,6 +15,10 @@ export interface ProjectSummary {
   id: string
   name: string
   forkedFrom: string | null
+  canonicalDesignId: string | null
+  canonicalVersionId: string | null
+  canonicalTitle: string | null
+  canonicalHasNewerVersion: boolean
   messageCount: number
   updatedAt: number
 }
@@ -25,10 +29,58 @@ export interface FullProject {
   name: string
   code: string
   forkedFrom: string | null
+  canonicalDesignId: string | null
+  canonicalVersionId: string | null
+  canonicalTitle: string | null
+  canonicalVersionNumber: number | null
+  canonicalHasNewerVersion: boolean
   files: WorkspaceFile[]
   createdAt: number
   updatedAt: number
 }
+
+export type CanonicalVisibility = 'private' | 'published'
+
+/** A gallery-safe canonical payload. Large source and file data are omitted. */
+export interface CanonicalSummary {
+  id: string
+  title: string
+  description: string
+  category: string | null
+  visibility: CanonicalVisibility
+  currentVersionId: string
+  versionNumber: number
+  thumbnail: string | null
+  fileCount: number
+  isOwner: boolean
+  updatedAt: number
+}
+
+/** The complete current canonical version shown in the starter detail view. */
+export interface CanonicalDetail extends CanonicalSummary {
+  code: string
+  files: WorkspaceFile[]
+  modificationGuide: string
+  changeSummary: string | null
+  createdAt: number
+}
+
+export interface StarterDraft {
+  title: string
+  description: string
+  modificationGuide: string
+  reusableChanges: string[]
+  customerSpecificRisks: string[]
+}
+
+export const CANONICAL_LIMITS = {
+  title: 100,
+  description: 2_000,
+  category: 60,
+  modificationGuide: 4_000,
+  changeSummary: 1_000,
+  thumbnailBytes: 300_000,
+} as const
 
 /**
  * Name a project gets before anything is known about it. While a project still

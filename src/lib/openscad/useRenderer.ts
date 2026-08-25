@@ -125,6 +125,12 @@ export function useRenderer() {
     )
   }, [])
 
+  /** Clear the preview and invalidate any in-flight preview response. */
+  const reset = useCallback(() => {
+    latest.current = ++reqId.current
+    setState({ status: 'idle', mesh: null, error: null, log: '' })
+  }, [])
+
   const exportModel = useCallback(
     (code: string, files: WorkspaceFile[], format: ExportFormat): Promise<ArrayBuffer> => {
       const worker = workerRef.current
@@ -142,5 +148,5 @@ export function useRenderer() {
     [],
   )
 
-  return { state, render, exportModel }
+  return { state, render, reset, exportModel }
 }

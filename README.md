@@ -1,9 +1,9 @@
 # E3D OpenSCAD Studio
 
 An AI-powered [OpenSCAD](https://openscad.org/) editor with live 3D preview. You
-describe what you want in a chat; an AI agent writes the OpenSCAD code; it renders
-to a 3D model in real time. Every chat is a project, and any project can be forked
-to branch a new idea.
+choose a proven starter (or begin blank), then describe what you want in a clean
+customer workspace. An AI agent writes the OpenSCAD code and renders the model in
+real time.
 
 ## Features
 
@@ -19,10 +19,17 @@ to branch a new idea.
   Bambu Studio, Orca, and PrusaSlicer map to filaments for multi-material printing.
 - **Editable code** — a CodeMirror editor with OpenSCAD syntax highlighting. Edit the
   code by hand and the preview re-renders automatically.
-- **Projects = chats** — each project holds its conversation history, code, and
-  workspace files (SVG/DXF/STL/`.scad` libraries), persisted in Postgres.
-- **Fork** — clone any project (code + history + files) into a new one that remembers
-  its ancestor.
+- **Starter library** — reusable, versioned canonical designs hold code, files,
+  descriptions, previews, and design-specific instructions for the agent. They do
+  not contain chat history.
+- **Clean customer workspaces** — starting from a canonical copies its current code
+  and files into an independent workspace with an empty chat. Blank designs remain
+  available too.
+- **Save as starter** — distill a customer workspace into reviewed reusable metadata,
+  then create a private starter or publish a new immutable version without copying
+  the conversation.
+- **Workspace fork** — clone an in-progress workspace (code + history + files) when
+  you intentionally want to branch the same conversation.
 - **Share** — create a revocable link to a frozen project snapshot. Another signed-in
   user can open the link as a private, independently editable copy with the full
   conversation, source, and workspace files.
@@ -52,8 +59,8 @@ openscad-wasm worker     ──▶  binary STL  ──▶  three.js preview
   reach the browser.
 - **Chat UI**: [AI Elements](https://elements.ai-sdk.dev) (shadcn/ui-based components)
   with `useChat` streaming.
-- **Persistence**: Postgres via Drizzle ORM (`projects`, `messages` as AI SDK
-  UIMessages, `workspace_files`).
+- **Persistence**: Postgres via Drizzle ORM (`canonical_designs`, immutable
+  `canonical_versions`, mutable `projects`, AI SDK `messages`, and `workspace_files`).
 - **Rendering**: OpenSCAD wasm (vendored snapshot with the Manifold geometry backend)
   in a Web Worker; wasm + font bundle served from `public/openscad/`.
 
@@ -82,6 +89,7 @@ teeth") and watch it render.
 npm run dev          # dev server (Turbopack)
 npm run build        # type-check + production build
 npm run start        # serve production build
+npm test             # focused domain regression tests
 npm run typecheck    # tsc --noEmit
 npm run db:generate  # generate migration from schema changes
 npm run db:migrate   # apply migrations
@@ -94,6 +102,22 @@ npm run db:migrate   # apply migrations
 2. Add `OPENROUTER_API_KEY` under Project → Settings → Environment Variables
    (Production, Preview, and Development), then redeploy so it takes effect.
 3. Run migrations against the production database: `POSTGRES_URL=... npm run db:migrate`.
+4. Optionally set `CANONICAL_PUBLISHER_USER_IDS` to the Clerk user IDs allowed to
+   make starters visible to every signed-in user. Other users can create private
+   starters without this setting.
+
+## Starter workflow
+
+Opening `/studio` shows the starter library rather than automatically reopening the
+latest customer job. Choose **Blank design** or inspect a starter and select
+**Start design**. A starter-created workspace records the exact version it came from;
+new starter releases appear as a non-destructive update hint while existing work
+continues unchanged.
+
+Use **Save as starter** in a workspace to draft a title, description, reusable-change
+summary, and agent guidance. Review any customer-specific warnings before saving.
+Publishing snapshots only the current code and workspace files — messages never
+become part of a starter.
 
 ## Tech stack
 
