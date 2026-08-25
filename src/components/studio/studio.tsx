@@ -42,7 +42,7 @@ export function Studio({
   const [rightTab, setRightTab] = useState<RightTab>('preview')
   const [thumbnail, setThumbnail] = useState<string | null>(null)
 
-  const { state: renderState, render, exportModel } = useRenderer()
+  const { state: renderState, render, reset: resetRenderer, exportModel } = useRenderer()
 
   // ---- server helpers ------------------------------------------------------
   const refreshList = useCallback(async () => {
@@ -84,12 +84,20 @@ export function Studio({
 
   // ---- open the requested workspace; null is the persistent starter home ---
   useEffect(() => {
+    setThumbnail(null)
+    resetRenderer()
     if (activeId) {
       void openProject(activeId)
       return
     }
     setProject(null)
-  }, [activeId, openProject])
+  }, [activeId, openProject, resetRenderer])
+
+  // Never reuse a preview after its source starts rendering or fails. The next
+  // successful mesh supplies a fresh thumbnail for the active workspace.
+  useEffect(() => {
+    if (renderState.status !== 'done') setThumbnail(null)
+  }, [renderState.status])
 
   // ---- live render (debounced) --------------------------------------------
   useEffect(() => {

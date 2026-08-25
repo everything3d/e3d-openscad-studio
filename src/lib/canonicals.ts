@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { z } from 'zod'
-import { CANONICAL_LIMITS } from './types'
+import { CANONICAL_LIMITS, type CanonicalVisibility } from './types'
 
 const optionalText = (limit: number) =>
   z
@@ -62,6 +62,15 @@ export function publisherIds(value: string | undefined): string[] {
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean)
+}
+
+/** Whether a write is allowed after accounting for the visibility it produces. */
+export function canManageCanonicalVisibility(
+  currentVisibility: CanonicalVisibility,
+  requestedVisibility: CanonicalVisibility | undefined,
+  isPublisher: boolean,
+): boolean {
+  return (requestedVisibility ?? currentVisibility) !== 'published' || isPublisher
 }
 
 export function buildCanonicalProjectSeed({

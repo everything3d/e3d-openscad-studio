@@ -490,4 +490,3 @@ part back” into an explicit review operation rather than an unsafe merge.
 - Reviewers should scrutinize owner predicates, publication authorization,
   transaction boundaries, decoded thumbnail size checks, and any path that could
   accidentally copy messages into a canonical.
-

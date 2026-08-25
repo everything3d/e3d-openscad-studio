@@ -2,7 +2,11 @@ import { randomBytes } from 'node:crypto'
 import { and, asc, count, desc, eq, isNull, or, sql } from 'drizzle-orm'
 import { generateId, type UIMessage } from 'ai'
 import { db } from '.'
-import { buildCanonicalProjectSeed, publisherIds } from '../canonicals'
+import {
+  buildCanonicalProjectSeed,
+  canManageCanonicalVisibility,
+  publisherIds,
+} from '../canonicals'
 import {
   canonicalDesigns,
   canonicalVersions,
@@ -448,7 +452,6 @@ export async function addCanonicalVersionFromProject(
   input: PublishCanonicalInput,
   userId: string,
 ): Promise<CanonicalDetail | null> {
-  if (input.visibility === 'published' && !isCanonicalPublisher(userId)) return null
   const versionId = generateId()
   const created = await db.transaction(async (tx) => {
     const [design] = await tx
@@ -463,6 +466,15 @@ export async function addCanonicalVersionFromProject(
       )
       .for('update')
     if (!design) return false
+    if (
+      !canManageCanonicalVisibility(
+        design.visibility as CanonicalVisibility,
+        input.visibility,
+        isCanonicalPublisher(userId),
+      )
+    ) {
+      return false
+    }
 
     const [current] = await tx
       .select({ versionNumber: canonicalVersions.versionNumber })
@@ -511,7 +523,8 @@ export async function updateCanonicalMetadata(
     archived?: boolean
   },
 ): Promise<boolean> {
-  if (patch.visibility === 'published' && !isCanonicalPublisher(userId)) return false
+  const isPublisher = isCanonicalPublisher(userId)
+  if (patch.visibility === 'published' && !isPublisher) return false
   const values: Record<string, unknown> = { updatedAt: sql`now()` }
   if (patch.title !== undefined) values.title = patch.title
   if (patch.description !== undefined) values.description = patch.description
@@ -521,7 +534,17 @@ export async function updateCanonicalMetadata(
   const rows = await db
     .update(canonicalDesigns)
     .set(values)
-    .where(and(eq(canonicalDesigns.id, id), eq(canonicalDesigns.ownerId, userId)))
+    .where(
+      and(
+        eq(canonicalDesigns.id, id),
+        eq(canonicalDesigns.ownerId, userId),
+        // A removed publisher may unpublish their design, but cannot otherwise
+        // mutate content that remains visible to everyone.
+        !isPublisher && patch.visibility !== 'private'
+          ? eq(canonicalDesigns.visibility, 'private')
+          : undefined,
+      ),
+    )
     .returning({ id: canonicalDesigns.id })
   return rows.length > 0
 }

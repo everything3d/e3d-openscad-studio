@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildCanonicalProjectSeed,
+  canManageCanonicalVisibility,
   isValidCanonicalThumbnail,
   publisherIds,
   publishCanonicalSchema,
@@ -28,6 +29,15 @@ describe('canonical domain helpers', () => {
   it('parses a comma-separated publisher allowlist', () => {
     expect(publisherIds(' user_1, user_2 ,,')).toEqual(['user_1', 'user_2'])
     expect(publisherIds(undefined)).toEqual([])
+  })
+
+  it('blocks revoked publishers from writes that remain public', () => {
+    expect(canManageCanonicalVisibility('published', undefined, false)).toBe(false)
+    expect(canManageCanonicalVisibility('published', 'published', false)).toBe(false)
+    expect(canManageCanonicalVisibility('published', 'private', false)).toBe(true)
+    expect(canManageCanonicalVisibility('private', undefined, false)).toBe(true)
+    expect(canManageCanonicalVisibility('private', 'published', false)).toBe(false)
+    expect(canManageCanonicalVisibility('published', undefined, true)).toBe(true)
   })
 
   it('accepts bounded JPEG/WebP thumbnails and rejects other data', () => {
