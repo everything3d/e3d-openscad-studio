@@ -16,7 +16,6 @@ export const canonicalDesigns = pgTable('canonical_designs', {
   title: text('title').notNull(),
   description: text('description').notNull(),
   category: text('category'),
-  visibility: text('visibility').notNull().default('private'),
   /** Kept as a logical pointer to avoid a circular FK with canonical_versions. */
   currentVersionId: text('current_version_id').notNull(),
   archivedAt: timestamp('archived_at', { withTimezone: true }),

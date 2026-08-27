@@ -26,8 +26,8 @@ real time.
   current code and files into an independent workspace with an empty chat. Blank
   designs remain available too.
 - **Save as canonical** — distill a derivative workspace into reviewed reusable metadata,
-  then create a private canonical or publish a new immutable version without copying
-  the conversation.
+  then create a shared canonical or publish a new immutable version without copying the
+  conversation. Only the creating account can maintain that canonical.
 - **Workspace fork** — clone an in-progress workspace (code + history + files) when
   you intentionally want to branch the same conversation.
 - **Share** — create a revocable link to a frozen project snapshot. Another signed-in
@@ -102,9 +102,8 @@ npm run db:migrate   # apply migrations
 2. Add `OPENROUTER_API_KEY` under Project → Settings → Environment Variables
    (Production, Preview, and Development), then redeploy so it takes effect.
 3. Run migrations against the production database: `POSTGRES_URL=... npm run db:migrate`.
-4. Optionally set `CANONICAL_PUBLISHER_USER_IDS` to the Clerk user IDs allowed to
-   make canonical designs visible to every signed-in user. Other users can create
-   private canonicals without this setting.
+4. Canonical designs form a shared library for every signed-in user. Their owner
+   remains the only account that can edit, version, or archive them.
 
 ## Canonical and derivative workflow
 

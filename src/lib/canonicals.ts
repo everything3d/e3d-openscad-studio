@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { z } from 'zod'
-import { CANONICAL_LIMITS, type CanonicalVisibility } from './types'
+import { CANONICAL_LIMITS } from './types'
 
 const optionalText = (limit: number) =>
   z
@@ -40,38 +40,18 @@ export const publishCanonicalSchema = z.object({
     .refine(isValidCanonicalThumbnail, 'Thumbnail must be a JPEG/WebP data URL under 300 KB')
     .transform((value) => value || null),
   changeSummary: optionalText(CANONICAL_LIMITS.changeSummary),
-  visibility: z.enum(['private', 'published']).default('private'),
 })
 
-export const publishCanonicalVersionSchema = publishCanonicalSchema.extend({
-  visibility: z.enum(['private', 'published']).optional(),
-})
+export const publishCanonicalVersionSchema = publishCanonicalSchema
 
 export const updateCanonicalSchema = z
   .object({
     title: z.string().trim().min(1).max(CANONICAL_LIMITS.title).optional(),
     description: z.string().trim().min(1).max(CANONICAL_LIMITS.description).optional(),
     category: patchOptionalText(CANONICAL_LIMITS.category),
-    visibility: z.enum(['private', 'published']).optional(),
     archived: z.boolean().optional(),
   })
   .refine((value) => Object.values(value).some((item) => item !== undefined), 'No changes provided')
-
-export function publisherIds(value: string | undefined): string[] {
-  return (value ?? '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean)
-}
-
-/** Whether a write is allowed after accounting for the visibility it produces. */
-export function canManageCanonicalVisibility(
-  currentVisibility: CanonicalVisibility,
-  requestedVisibility: CanonicalVisibility | undefined,
-  isPublisher: boolean,
-): boolean {
-  return (requestedVisibility ?? currentVisibility) !== 'published' || isPublisher
-}
 
 export function buildCanonicalProjectSeed({
   id,

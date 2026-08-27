@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildCanonicalProjectSeed,
-  canManageCanonicalVisibility,
   isValidCanonicalThumbnail,
-  publisherIds,
   publishCanonicalSchema,
   publishCanonicalVersionSchema,
   updateCanonicalSchema,
@@ -26,20 +24,6 @@ describe('canonical domain helpers', () => {
     expect(seed).not.toHaveProperty('messages')
   })
 
-  it('parses a comma-separated publisher allowlist', () => {
-    expect(publisherIds(' user_1, user_2 ,,')).toEqual(['user_1', 'user_2'])
-    expect(publisherIds(undefined)).toEqual([])
-  })
-
-  it('blocks revoked publishers from writes that remain public', () => {
-    expect(canManageCanonicalVisibility('published', undefined, false)).toBe(false)
-    expect(canManageCanonicalVisibility('published', 'published', false)).toBe(false)
-    expect(canManageCanonicalVisibility('published', 'private', false)).toBe(true)
-    expect(canManageCanonicalVisibility('private', undefined, false)).toBe(true)
-    expect(canManageCanonicalVisibility('private', 'published', false)).toBe(false)
-    expect(canManageCanonicalVisibility('published', undefined, true)).toBe(true)
-  })
-
   it('accepts bounded JPEG/WebP thumbnails and rejects other data', () => {
     expect(isValidCanonicalThumbnail('data:image/jpeg;base64,aGVsbG8=')).toBe(true)
     expect(isValidCanonicalThumbnail('data:image/webp;base64,aGVsbG8=')).toBe(true)
@@ -59,13 +43,22 @@ describe('canonical domain helpers', () => {
       }).success,
     ).toBe(true)
     expect(publishCanonicalSchema.safeParse({ projectId: 'project-1' }).success).toBe(false)
-    const version = publishCanonicalVersionSchema.parse({
+    expect(
+      publishCanonicalVersionSchema.parse({
+        projectId: 'project-1',
+        title: 'Name Plaque',
+        description: 'A reusable plaque.',
+        modificationGuide: '',
+      }),
+    ).toEqual({
       projectId: 'project-1',
       title: 'Name Plaque',
       description: 'A reusable plaque.',
+      category: null,
       modificationGuide: '',
+      thumbnail: null,
+      changeSummary: null,
     })
-    expect(version.visibility).toBeUndefined()
   })
 
   it('rejects empty metadata patches without turning omitted category into null', () => {

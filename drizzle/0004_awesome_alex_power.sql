@@ -1,0 +1,1 @@
+ALTER TABLE "canonical_designs" DROP COLUMN "visibility";

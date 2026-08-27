@@ -39,15 +39,12 @@ export interface FullProject {
   updatedAt: number
 }
 
-export type CanonicalVisibility = 'private' | 'published'
-
 /** A gallery-safe canonical payload. Large source and file data are omitted. */
 export interface CanonicalSummary {
   id: string
   title: string
   description: string
   category: string | null
-  visibility: CanonicalVisibility
   currentVersionId: string
   versionNumber: number
   thumbnail: string | null

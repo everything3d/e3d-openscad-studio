@@ -92,7 +92,6 @@ export function SaveAsStarterDialog({
           modificationGuide: draft.modificationGuide,
           changeSummary: draft.reusableChanges.join('; '),
           thumbnail,
-          ...(mode === 'new' ? { visibility: 'private' } : {}),
         }),
       })
       if (!res.ok) {

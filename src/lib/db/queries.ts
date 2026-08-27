@@ -1,12 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { and, asc, count, desc, eq, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm'
 import { generateId, type UIMessage } from 'ai'
 import { db } from '.'
-import {
-  buildCanonicalProjectSeed,
-  canManageCanonicalVisibility,
-  publisherIds,
-} from '../canonicals'
+import { buildCanonicalProjectSeed } from '../canonicals'
 import {
   canonicalDesigns,
   canonicalVersions,
@@ -20,7 +16,6 @@ import {
   PLACEHOLDER_PROJECT_NAME,
   type CanonicalDetail,
   type CanonicalSummary,
-  type CanonicalVisibility,
   type FullProject,
   type ProjectSummary,
   type WorkspaceFile,
@@ -342,7 +337,6 @@ function toCanonicalSummary(
     title: design.title,
     description: design.description,
     category: design.category,
-    visibility: design.visibility as CanonicalVisibility,
     currentVersionId: design.currentVersionId,
     versionNumber: version.versionNumber,
     thumbnail: version.thumbnail,
@@ -367,20 +361,12 @@ function toCanonicalDetail(
   }
 }
 
-function readableCanonical(userId: string) {
-  return or(eq(canonicalDesigns.ownerId, userId), eq(canonicalDesigns.visibility, 'published'))
-}
-
-export function isCanonicalPublisher(userId: string): boolean {
-  return publisherIds(process.env.CANONICAL_PUBLISHER_USER_IDS).includes(userId)
-}
-
 export async function listCanonicals(userId: string): Promise<CanonicalSummary[]> {
   const rows = await db
     .select({ design: canonicalDesigns, version: canonicalVersions })
     .from(canonicalDesigns)
     .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
-    .where(and(isNull(canonicalDesigns.archivedAt), readableCanonical(userId)))
+    .where(isNull(canonicalDesigns.archivedAt))
     .orderBy(desc(canonicalDesigns.updatedAt))
   return rows.map(({ design, version }) => toCanonicalSummary(design, version, userId))
 }
@@ -390,13 +376,7 @@ export async function getCanonical(id: string, userId: string): Promise<Canonica
     .select({ design: canonicalDesigns, version: canonicalVersions })
     .from(canonicalDesigns)
     .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
-    .where(
-      and(
-        eq(canonicalDesigns.id, id),
-        isNull(canonicalDesigns.archivedAt),
-        readableCanonical(userId),
-      ),
-    )
+    .where(and(eq(canonicalDesigns.id, id), isNull(canonicalDesigns.archivedAt)))
   return row ? toCanonicalDetail(row.design, row.version, userId) : null
 }
 
@@ -408,14 +388,12 @@ export interface PublishCanonicalInput {
   modificationGuide: string
   thumbnail?: string | null
   changeSummary?: string | null
-  visibility?: CanonicalVisibility
 }
 
 export async function createCanonicalFromProject(
   input: PublishCanonicalInput,
   userId: string,
 ): Promise<CanonicalDetail | null> {
-  if (input.visibility === 'published' && !isCanonicalPublisher(userId)) return null
   const canonicalId = generateId()
   const versionId = generateId()
   const created = await db.transaction(async (tx) => {
@@ -427,7 +405,6 @@ export async function createCanonicalFromProject(
       title: input.title,
       description: input.description,
       category: input.category ?? null,
-      visibility: input.visibility ?? 'private',
       currentVersionId: versionId,
     })
     await tx.insert(canonicalVersions).values({
@@ -466,16 +443,6 @@ export async function addCanonicalVersionFromProject(
       )
       .for('update')
     if (!design) return false
-    if (
-      !canManageCanonicalVisibility(
-        design.visibility as CanonicalVisibility,
-        input.visibility,
-        isCanonicalPublisher(userId),
-      )
-    ) {
-      return false
-    }
-
     const [current] = await tx
       .select({ versionNumber: canonicalVersions.versionNumber })
       .from(canonicalVersions)
@@ -502,7 +469,6 @@ export async function addCanonicalVersionFromProject(
         title: input.title,
         description: input.description,
         category: input.category === undefined ? design.category : input.category,
-        visibility: input.visibility ?? design.visibility,
         currentVersionId: versionId,
         updatedAt: sql`now()`,
       })
@@ -519,32 +485,18 @@ export async function updateCanonicalMetadata(
     title?: string
     description?: string
     category?: string | null
-    visibility?: CanonicalVisibility
     archived?: boolean
   },
 ): Promise<boolean> {
-  const isPublisher = isCanonicalPublisher(userId)
-  if (patch.visibility === 'published' && !isPublisher) return false
   const values: Record<string, unknown> = { updatedAt: sql`now()` }
   if (patch.title !== undefined) values.title = patch.title
   if (patch.description !== undefined) values.description = patch.description
   if (patch.category !== undefined) values.category = patch.category
-  if (patch.visibility !== undefined) values.visibility = patch.visibility
   if (patch.archived !== undefined) values.archivedAt = patch.archived ? sql`now()` : null
   const rows = await db
     .update(canonicalDesigns)
     .set(values)
-    .where(
-      and(
-        eq(canonicalDesigns.id, id),
-        eq(canonicalDesigns.ownerId, userId),
-        // A removed publisher may unpublish their design, but cannot otherwise
-        // mutate content that remains visible to everyone.
-        !isPublisher && patch.visibility !== 'private'
-          ? eq(canonicalDesigns.visibility, 'private')
-          : undefined,
-      ),
-    )
+    .where(and(eq(canonicalDesigns.id, id), eq(canonicalDesigns.ownerId, userId)))
     .returning({ id: canonicalDesigns.id })
   return rows.length > 0
 }
@@ -555,13 +507,7 @@ export async function startCanonical(id: string, userId: string): Promise<FullPr
       .select({ design: canonicalDesigns, version: canonicalVersions })
       .from(canonicalDesigns)
       .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
-      .where(
-        and(
-          eq(canonicalDesigns.id, id),
-          isNull(canonicalDesigns.archivedAt),
-          readableCanonical(userId),
-        ),
-      )
+      .where(and(eq(canonicalDesigns.id, id), isNull(canonicalDesigns.archivedAt)))
     if (!row) return null
     const newId = generateId()
     await tx.insert(projects).values({
