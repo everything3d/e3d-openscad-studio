@@ -6,12 +6,10 @@ import { createOpenRouter } from '@openrouter/ai-sdk-provider'
  * The key is read from OPENROUTER_API_KEY lazily, per request, by the provider
  * itself — importing this module with no key configured is safe, and a missing
  * key surfaces as an error on the first model call rather than at boot.
- * `appName`/`appUrl` set the attribution headers OpenRouter uses to group usage
- * by app on its dashboard.
+ * Optional app attribution is deliberately omitted. OpenRouter still records
+ * normal account/key usage, but requests do not identify the E3D app listing.
  */
 const openrouter = createOpenRouter({
-  appName: 'E3D OpenSCAD Studio',
-  appUrl: process.env.OPENROUTER_APP_URL ?? 'https://github.com/everything3d/e3d-openscad-studio',
   // We talk to OpenRouter itself, not an OpenAI-compatible third party.
   compatibility: 'strict',
 })
