@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>E3D Studio</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">{"imports":{"three":"./vendor/three.js"}}</script>
+</head>
+<body>
+  <header><div class="brand"><span class="mark">e3d</span><span>Studio</span><span class="prototype">Design workspace</span></div><div class="project-controls"><label class="sr-only" for="project">Design</label><select id="project" aria-label="Choose design"></select><button id="new-project">New design</button><button id="open-library">Library</button><button id="rename-project">Rename</button><button id="duplicate-project">Duplicate</button></div><div class="header-actions"><button id="import-assets">Import files</button><input id="asset-input" type="file" multiple hidden><a id="source-bundle">Source ZIP</a><a id="view-source" target="_blank">View source</a><a id="download" class="button primary disabled" aria-disabled="true">Download 3MF</a></div></header>
+  <main>
+    <section class="model-pane" aria-label="Model workspace">
+      <div class="history-tools"><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button><button id="compare" aria-pressed="false" disabled>Show before</button><span id="save-status">Saved locally</span></div><div class="model-title"><div><h1>Your design</h1><p id="dimensions">Loading model…</p></div><span id="render-status" class="badge">Starting</span></div>
+      <div id="viewport" aria-label="3D model. Drag to rotate, scroll to zoom.">
+        <div id="empty" hidden>3D view unavailable. Use the rendered images below.</div>
+        <img id="frozen" alt="Frozen view for feedback" hidden>
+        <canvas id="markup" aria-label="Draw feedback on this view" hidden></canvas>
+        <div id="annotation-hint" hidden>Click to pin or draw a stroke. Drag a pin to move it.</div>
+      </div>
+      <div class="view-tools"><div class="views"><button data-view="iso">3D</button><button data-view="top">Top</button><button data-view="front">Front</button><button data-view="right">Right</button><button id="fit">Fit</button></div><button id="mark-view" class="button secondary">Mark a change</button><div id="mark-actions" hidden><button id="undo-stroke">Undo mark</button><button id="redo-stroke">Redo mark</button><button id="clear-strokes">Clear marks</button><button id="cancel-mark">Cancel</button><button id="attach-mark" class="button primary">Add to message</button></div></div>
+      <div class="model-footer"><span>Drag to orbit · Scroll to zoom</span><span id="palette"></span></div>
+      <details class="history-details"><summary>Design history</summary><ol id="history-list"></ol></details><details class="render-details"><summary>Rendered images & diagnostics</summary><div id="render-images"></div><pre id="diagnostics"></pre></details>
+    </section>
+    <aside aria-label="Conversation">
+      <div class="conversation-title"><h2>Make it yours</h2><span id="connection" class="connection">Connecting…</span></div>
+      <div id="messages" role="log" aria-live="polite"><div id="welcome"><h3>What would you like to make?</h3><p>Describe a change, add a reference, or mark something on the model.</p><div class="suggestions"><button data-prompt='Change the name to "Maya" and add a small raised smiley to its right. Give the smiley a different color.'>Add a name and a smiley</button><button data-prompt="Turn this into a nameplate shaped like a cloud. Keep the raised text.">Try a cloud-shaped base</button></div></div></div>
+      <div id="error" role="alert" hidden></div>
+      <form id="composer"><div id="attachments"></div><label for="prompt" class="sr-only">Describe your design or change</label><textarea spellcheck="true" id="prompt" rows="3" placeholder="Describe what you want to change…"></textarea><div class="compose-actions"><button type="button" id="attach-reference" class="attach-button">＋ Reference image</button><input id="file-input" type="file" accept="image/png,image/jpeg" hidden multiple><span id="activity"></span><button id="stop" type="button" hidden>Stop</button><button id="send" class="button primary" type="submit">Send</button></div></form>
+      <details class="runtime-details"><summary>Codex activity</summary><div id="tool-activity"></div><pre id="activity-log"></pre></details>
+    </aside>
+  </main>
+<dialog id="library-dialog"><div class="dialog-heading"><h2>Start from a design</h2><button id="close-library">Close</button></div><p>Open a copy in this workspace.</p><div id="library-items"></div></dialog>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

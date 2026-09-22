@@ -9,6 +9,8 @@ the status here when finished.
 | Plan | Title | Priority | Effort | Depends on | Status |
 |---|---|---|---|---|---|
 | 001 | Versioned canonical designs and clean chat workspaces | P1 | L | — | IN PROGRESS |
+| 002 | Coding-agent workspace: arbitrary file edits, render/inspect/repair, marked feedback | P1 | L | Existing studio/canonical implementation | IN PROGRESS — standalone Codex prototype verified |
+| 003 | Codex/OpenRouter workspace remake with exact history and graphical feedback | P1 | L | Prototype | IN PROGRESS — local acceptance passed; hosted integration pending |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED (with
 reason)
@@ -17,8 +19,19 @@ reason)
 
 - Plan 001 is ordered internally into independently verifiable slices: tests and
   contracts, schema, APIs, agent context, starter library, publishing, and docs.
+- [Plan 002](002-visual-modeling-workflow.md), revised on 2026-09-06 after user feedback,
+  preserves arbitrary source/asset editing and removes parameter controls entirely.
+  The user's subsequent direction supersedes the proposed custom-tool sequence:
+  reuse Codex first and own only graphical input/output plus the renderer. The
+  [standalone prototype](../prototype/README.md) now verifies that architecture with
+  real Codex edits, SVG creation, image inspection, and marked screenshot feedback.
+  Integration into the existing product is still separate work. The existing status
+  of plan 001 was not reconciled in this audit.
 
 ## Findings considered and rejected
+
+- **Parameter controls as the primary modeling interface**: rejected by the user;
+  keep unrestricted source editing and improve the agent's coding/inspection tools.
 
 - **Make selected projects read-only**: rejected because it preserves the incorrect
   project/chat coupling and does not create clean derivative workspaces.
@@ -28,3 +41,6 @@ reason)
   and files can contain derivative-specific details; publication must be reviewed.
 - **Replace the public marketing page immediately**: deferred until the signed-in
   starter library proves the interaction and access model.
+
+- [Plan 003](003-agentic-studio-remake.md) is the active implementation plan on
+  `codex/agentic-studio`, superseding the custom-agent portions of plan 002.

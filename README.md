@@ -113,6 +113,12 @@ select **Create derivative**. A derivative records the exact canonical version i
 came from; new canonical versions appear as a non-destructive update hint while
 existing work continues unchanged.
 
+The shared catalog automatically installs three product-owned starting points: the
+three-color **Name-sign piggy bank**, the original **Two-color name-sign piggy bank**,
+and the two-perspective **Two-name illusion**.
+Their stable system ownership keeps them available to every signed-in user without
+making the first viewer their maintainer.
+
 Use **Save as canonical** in a workspace to draft a title, description,
 reusable-change summary, and agent guidance. Review any derivative-specific warnings
 before saving. Publishing snapshots only the current code and workspace files —

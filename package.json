@@ -5,6 +5,8 @@
   "type": "module",
   "description": "AI-powered OpenSCAD studio with live 3D preview. Next.js + AI SDK + AI Elements.",
   "scripts": {
+    "prototype": "node prototype/server.mjs",
+    "test:prototype": "node --test prototype/*.check.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -12,7 +14,10 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "studio": "node studio/server.mjs",
+    "studio:local": "node studio/local.mjs",
+    "test:studio": "node --test studio/*.check.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.23",
@@ -23,6 +28,7 @@
     "@codemirror/state": "^6.4.1",
     "@codemirror/view": "^6.28.0",
     "@lezer/highlight": "^1.2.0",
+    "@openai/codex": "0.144.6",
     "@openrouter/ai-sdk-provider": "^3.0.0",
     "@radix-ui/react-use-controllable-state": "^1.2.3",
     "@rive-app/react-webgl2": "^4.29.5",
@@ -48,6 +54,7 @@
     "react-dom": "^19.2.7",
     "react-jsx-parser": "^2.4.1",
     "shadcn": "^4.13.0",
+    "sharp": "0.35.3",
     "shiki": "^4.3.1",
     "streamdown": "^2.5.0",
     "tailwind-merge": "^3.6.0",

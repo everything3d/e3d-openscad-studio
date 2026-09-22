@@ -3,6 +3,7 @@ import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm'
 import { generateId, type UIMessage } from 'ai'
 import { db } from '.'
 import { buildCanonicalProjectSeed } from '../canonicals'
+import { BUILT_IN_CANONICALS, SYSTEM_CANONICAL_OWNER_ID } from '../builtin-canonicals'
 import {
   canonicalDesigns,
   canonicalVersions,
@@ -326,6 +327,51 @@ export async function forkProject(sourceId: string, userId: string): Promise<Ful
 type CanonicalDesignRecord = typeof canonicalDesigns.$inferSelect
 type CanonicalVersionRecord = typeof canonicalVersions.$inferSelect
 
+let builtInCanonicalSeed: Promise<void> | null = null
+
+/**
+ * Install the product-owned starter catalog on first use. Stable IDs plus
+ * conflict-safe inserts make this safe across concurrent/serverless instances.
+ */
+async function ensureBuiltInCanonicals(): Promise<void> {
+  builtInCanonicalSeed ??= db
+    .transaction(async (tx) => {
+      for (const starter of BUILT_IN_CANONICALS) {
+        await tx
+          .insert(canonicalDesigns)
+          .values({
+            id: starter.id,
+            ownerId: SYSTEM_CANONICAL_OWNER_ID,
+            title: starter.title,
+            description: starter.description,
+            category: starter.category,
+            currentVersionId: starter.versionId,
+          })
+          .onConflictDoNothing()
+        await tx
+          .insert(canonicalVersions)
+          .values({
+            id: starter.versionId,
+            canonicalDesignId: starter.id,
+            versionNumber: starter.versionNumber,
+            code: starter.code,
+            files: [],
+            modificationGuide: starter.modificationGuide,
+            thumbnail: starter.thumbnail,
+            changeSummary: 'Initial built-in canonical design',
+            sourceProjectId: null,
+            createdBy: SYSTEM_CANONICAL_OWNER_ID,
+          })
+          .onConflictDoNothing()
+      }
+    })
+    .catch((error) => {
+      builtInCanonicalSeed = null
+      throw error
+    })
+  return builtInCanonicalSeed
+}
+
 function toCanonicalSummary(
   design: CanonicalDesignRecord,
   version: CanonicalVersionRecord,
@@ -362,16 +408,18 @@ function toCanonicalDetail(
 }
 
 export async function listCanonicals(userId: string): Promise<CanonicalSummary[]> {
+  await ensureBuiltInCanonicals()
   const rows = await db
     .select({ design: canonicalDesigns, version: canonicalVersions })
     .from(canonicalDesigns)
     .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
     .where(isNull(canonicalDesigns.archivedAt))
-    .orderBy(desc(canonicalDesigns.updatedAt))
+    .orderBy(desc(canonicalDesigns.updatedAt), asc(canonicalDesigns.title))
   return rows.map(({ design, version }) => toCanonicalSummary(design, version, userId))
 }
 
 export async function getCanonical(id: string, userId: string): Promise<CanonicalDetail | null> {
+  await ensureBuiltInCanonicals()
   const [row] = await db
     .select({ design: canonicalDesigns, version: canonicalVersions })
     .from(canonicalDesigns)
@@ -502,6 +550,7 @@ export async function updateCanonicalMetadata(
 }
 
 export async function startCanonical(id: string, userId: string): Promise<FullProject | null> {
+  await ensureBuiltInCanonicals()
   const projectId = await db.transaction(async (tx) => {
     const [row] = await tx
       .select({ design: canonicalDesigns, version: canonicalVersions })
