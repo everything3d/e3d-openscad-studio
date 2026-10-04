@@ -1,0 +1,92 @@
+[
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"kind\":\"mount\",\"mount\":\"29b9e2f0-34d5-4492-9da3-8651ad9934ca\",\"origin\":\"https://anthony-consider-senate-places.trycloudflare.com\",\"userAgent\":\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\"}",
+    "timestamp": "2026-10-04T20:15:04.500Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"kind\":\"bridge\",\"status\":\"connected\"}",
+    "timestamp": "2026-10-04T20:15:04.500Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"check\":1,\"status\":\"FAIL\",\"variant\":\"A blob\",\"error\":\"Error: Uncaught SyntaxError: Unexpected string\"}",
+    "timestamp": "2026-10-04T20:15:04.500Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"check\":1,\"status\":\"FAIL\",\"variant\":\"B remote classic (cross-origin may be refused)\",\"error\":\"SecurityError: Failed to construct 'Worker': Script at 'https://anthony-consider-senate-places.trycloudflare.com/spike-worker.js?origin=https%3A%2F%2Fanthony-consider-senate-places.trycloudflare.com' cannot be accessed from origin 'https://mcp-app-760240397687df66eba3b3b9430968b7f116d96fe6c030b3.web-sandbox.oaiusercontent.com'.\"}",
+    "timestamp": "2026-10-04T20:15:04.500Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"kind\":\"run-error\",\"error\":\"Error: Neither Worker variant worked. Main-thread probe requires a separate run.\"}",
+    "timestamp": "2026-10-04T20:15:04.500Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"kind\":\"error\",\"error\":\"Uncaught SyntaxError: Unexpected string\"}",
+    "timestamp": "2026-10-04T20:15:04.500Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"kind\":\"mount\",\"mount\":\"a3463cff-a82d-4059-91ee-084662e452c4\",\"origin\":\"https://anthony-consider-senate-places.trycloudflare.com\",\"userAgent\":\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\"}",
+    "timestamp": "2026-10-04T20:16:23.154Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"kind\":\"bridge\",\"status\":\"connected\"}",
+    "timestamp": "2026-10-04T20:16:23.154Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"check\":1,\"status\":\"FAIL\",\"variant\":\"A blob\",\"error\":\"Error: Uncaught SyntaxError: Unexpected string\"}",
+    "timestamp": "2026-10-04T20:16:23.155Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"check\":1,\"status\":\"FAIL\",\"variant\":\"B remote classic (cross-origin may be refused)\",\"error\":\"SecurityError: Failed to construct 'Worker': Script at 'https://anthony-consider-senate-places.trycloudflare.com/spike-worker.js?origin=https%3A%2F%2Fanthony-consider-senate-places.trycloudflare.com' cannot be accessed from origin 'https://mcp-app-760240397687df66eba3b3b9430968b7f116d96fe6c030b3.web-sandbox.oaiusercontent.com'.\"}",
+    "timestamp": "2026-10-04T20:16:23.155Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"kind\":\"run-error\",\"error\":\"Error: Neither Worker variant worked. Main-thread probe requires a separate run.\"}",
+    "timestamp": "2026-10-04T20:16:23.155Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"kind\":\"error\",\"error\":\"Uncaught SyntaxError: Unexpected string\"}",
+    "timestamp": "2026-10-04T20:16:23.155Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"kind\":\"mount\",\"mount\":\"318c3340-6655-41e5-aff0-683899cff654\",\"origin\":\"https://anthony-consider-senate-places.trycloudflare.com\",\"userAgent\":\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\"}",
+    "timestamp": "2026-10-04T20:16:46.197Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"kind\":\"bridge\",\"status\":\"connected\"}",
+    "timestamp": "2026-10-04T20:16:46.197Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"check\":1,\"status\":\"PASS\",\"variant\":\"A blob\"}",
+    "timestamp": "2026-10-04T20:16:46.197Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"kind\":\"check\",\"check\":3,\"status\":\"PASS\",\"bytes\":9603115}",
+    "timestamp": "2026-10-04T20:16:46.197Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"kind\":\"check\",\"check\":2,\"status\":\"PASS\",\"ms\":37.200000047683716,\"method\":\"WebAssembly.instantiateStreaming\",\"exports\":30}",
+    "timestamp": "2026-10-04T20:16:46.197Z"
+  },
+  {
+    "level": "log",
+    "message": "E3D_SPIKE {\"kind\":\"stop\",\"reason\":\"Check 2 definitive; remaining checks intentionally not run\"}",
+    "timestamp": "2026-10-04T20:16:46.197Z"
+  }
+]

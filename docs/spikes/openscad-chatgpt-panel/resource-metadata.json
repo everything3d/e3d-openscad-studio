@@ -1,0 +1,17 @@
+{
+  "uri": "ui://e3d/spike-v2.html",
+  "mimeType": "text/html;profile=mcp-app",
+  "_meta": {
+    "ui": {
+      "csp": {
+        "resourceDomains": [
+          "https://anthony-consider-senate-places.trycloudflare.com"
+        ],
+        "connectDomains": [
+          "https://anthony-consider-senate-places.trycloudflare.com",
+          "https://fonts.gstatic.com"
+        ]
+      }
+    }
+  }
+}

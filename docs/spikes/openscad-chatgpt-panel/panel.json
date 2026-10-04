@@ -1,0 +1,46 @@
+[
+  {
+    "kind": "mount",
+    "mount": "318c3340-6655-41e5-aff0-683899cff654",
+    "origin": "https://anthony-consider-senate-places.trycloudflare.com",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "time": "2026-10-04T20:16:33.894Z"
+  },
+  {
+    "kind": "bridge",
+    "status": "connected",
+    "mount": "318c3340-6655-41e5-aff0-683899cff654",
+    "time": "2026-10-04T20:16:33.914Z"
+  },
+  {
+    "check": 1,
+    "status": "PASS",
+    "variant": "A blob",
+    "mount": "318c3340-6655-41e5-aff0-683899cff654",
+    "time": "2026-10-04T20:16:34.025Z"
+  },
+  {
+    "kind": "check",
+    "check": 3,
+    "status": "PASS",
+    "bytes": 9603115,
+    "mount": "318c3340-6655-41e5-aff0-683899cff654",
+    "time": "2026-10-04T20:16:44.657Z"
+  },
+  {
+    "kind": "check",
+    "check": 2,
+    "status": "PASS",
+    "ms": 37.200000047683716,
+    "method": "WebAssembly.instantiateStreaming",
+    "exports": 30,
+    "mount": "318c3340-6655-41e5-aff0-683899cff654",
+    "time": "2026-10-04T20:16:44.966Z"
+  },
+  {
+    "kind": "stop",
+    "reason": "Check 2 definitive; remaining checks intentionally not run",
+    "mount": "318c3340-6655-41e5-aff0-683899cff654",
+    "time": "2026-10-04T20:16:45.000Z"
+  }
+]
