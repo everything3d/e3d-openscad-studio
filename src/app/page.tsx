@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import Image from 'next/image'
+import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 
 const SAMPLE_CODE = `// gear_mount.scad
@@ -61,7 +62,8 @@ function CtaLink({
 
 export default async function LandingPage() {
   const { userId } = await auth()
-  const signedIn = Boolean(userId)
+  // Signed-in visitors came here to work, not to read the pitch again.
+  if (userId) redirect('/studio')
 
   return (
     <div className="min-h-dvh bg-white text-neutral-900">
@@ -77,16 +79,10 @@ export default async function LandingPage() {
           </div>
         </div>
         <nav className="flex items-center gap-4">
-          {signedIn ? (
-            <CtaLink href="/studio">Open studio</CtaLink>
-          ) : (
-            <>
-              <CtaLink href="/sign-in" variant="ghost">
-                Sign in
-              </CtaLink>
-              <CtaLink href="/sign-up">Get started</CtaLink>
-            </>
-          )}
+          <CtaLink href="/sign-in" variant="ghost">
+            Sign in
+          </CtaLink>
+          <CtaLink href="/sign-up">Get started</CtaLink>
         </nav>
       </header>
       <div className="border-b border-neutral-200" />
@@ -102,20 +98,12 @@ export default async function LandingPage() {
           ready to print.
         </p>
         <div className="mt-10 flex items-center justify-center gap-4">
-          {signedIn ? (
-            <CtaLink href="/studio" large>
-              Open the studio
-            </CtaLink>
-          ) : (
-            <>
-              <CtaLink href="/sign-up" large>
-                Start building — it&apos;s free
-              </CtaLink>
-              <CtaLink href="/sign-in" variant="outline" large>
-                Sign in
-              </CtaLink>
-            </>
-          )}
+          <CtaLink href="/sign-up" large>
+            Start building — it&apos;s free
+          </CtaLink>
+          <CtaLink href="/sign-in" variant="outline" large>
+            Sign in
+          </CtaLink>
         </div>
 
         {/* Product mock: prompt → code → model */}
