@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   GitForkIcon,
   LayoutGridIcon,
@@ -8,9 +8,12 @@ import {
   PanelLeftOpenIcon,
   PencilIcon,
   PlusIcon,
+  SearchIcon,
   Trash2Icon,
+  XIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import type { ProjectSummary } from '@/lib/types'
 
@@ -38,7 +41,44 @@ export function Sidebar({
   onDelete,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
-  const sorted = [...projects].sort((a, b) => b.updatedAt - a.updatedAt)
+  const [query, setQuery] = useState('')
+  /** Server matches (name, code and chat) for the query they were fetched for. */
+  const [matches, setMatches] = useState<{ q: string; ids: Set<string> } | null>(null)
+  const trimmed = query.trim()
+
+  useEffect(() => {
+    if (!trimmed) return
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/projects?q=${encodeURIComponent(trimmed)}`, {
+          signal: controller.signal,
+        })
+        if (!res.ok) return
+        const { ids } = (await res.json()) as { ids: string[] }
+        setMatches({ q: trimmed, ids: new Set(ids) })
+      } catch {
+        // Aborted by a newer keystroke, or offline; keep the last result.
+      }
+    }, 250)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [trimmed])
+
+  const searching = trimmed.length > 0
+  // Until the server answers for this exact query, filter by name locally.
+  const matchIds = matches?.q === trimmed ? matches.ids : null
+  const sorted = [...projects]
+    .filter((p) =>
+      !searching
+        ? true
+        : matchIds
+          ? matchIds.has(p.id)
+          : p.name.toLowerCase().includes(trimmed.toLowerCase()),
+    )
+    .sort((a, b) => b.updatedAt - a.updatedAt)
 
   return (
     <aside
@@ -113,8 +153,33 @@ export function Sidebar({
             <div className="px-2 pb-2 pt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
               Derivative designs
             </div>
+            <div className="relative mb-2">
+              <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setQuery('')
+                }}
+                placeholder="Search names, code, chats"
+                aria-label="Search designs"
+                className="h-7 pl-7 pr-7 text-xs md:text-xs"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  aria-label="Clear search"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                >
+                  <XIcon className="size-3.5" />
+                </button>
+              )}
+            </div>
             {sorted.length === 0 && (
-              <div className="p-3 text-sm text-muted-foreground">No derivative designs yet.</div>
+              <div className="p-3 text-sm text-muted-foreground">
+                {searching ? 'No designs match.' : 'No derivative designs yet.'}
+              </div>
             )}
             {sorted.map((p) => (
               <div
