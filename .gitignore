@@ -23,3 +23,6 @@ tsconfig.tsbuildinfo
 # clerk keyless dev keys
 .clerk/
 .env.vercel*
+
+# local benchmark output
+/benchmarks/
