@@ -210,6 +210,36 @@ export async function listProjects(userId: string): Promise<ProjectSummary[]> {
   }))
 }
 
+/** An ILIKE pattern matching `query` as a literal substring. */
+function containsPattern(query: string): string {
+  return `%${query.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+}
+
+/**
+ * Ids of the user's projects whose name, OpenSCAD source, or chat history
+ * contains `query` (case-insensitive substring). Messages are matched against
+ * their serialized parts, so tool inputs/outputs are searched as well.
+ */
+export async function searchProjects(userId: string, query: string): Promise<string[]> {
+  const pattern = containsPattern(query)
+  const rows = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.userId, userId),
+        sql`(${projects.name} ilike ${pattern}
+          or ${projects.code} ilike ${pattern}
+          or exists (
+            select 1 from ${messages}
+            where ${messages.projectId} = ${projects.id}
+              and ${messages.parts}::text ilike ${pattern}
+          ))`,
+      ),
+    )
+  return rows.map((r) => r.id)
+}
+
 export async function getProject(id: string, userId: string): Promise<FullProject | null> {
   const [project] = await db
     .select()
@@ -369,6 +399,33 @@ export async function listCanonicals(userId: string): Promise<CanonicalSummary[]
     .where(isNull(canonicalDesigns.archivedAt))
     .orderBy(desc(canonicalDesigns.updatedAt))
   return rows.map(({ design, version }) => toCanonicalSummary(design, version, userId))
+}
+
+/**
+ * Ids of live canonicals whose metadata or current version (source, guide,
+ * file names) contains `query`. File contents are base64 and not searched.
+ */
+export async function searchCanonicals(query: string): Promise<string[]> {
+  const pattern = containsPattern(query)
+  const rows = await db
+    .select({ id: canonicalDesigns.id })
+    .from(canonicalDesigns)
+    .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
+    .where(
+      and(
+        isNull(canonicalDesigns.archivedAt),
+        sql`(${canonicalDesigns.title} ilike ${pattern}
+          or ${canonicalDesigns.description} ilike ${pattern}
+          or ${canonicalDesigns.category} ilike ${pattern}
+          or ${canonicalVersions.code} ilike ${pattern}
+          or ${canonicalVersions.modificationGuide} ilike ${pattern}
+          or exists (
+            select 1 from jsonb_array_elements(${canonicalVersions.files}) f
+            where f->>'name' ilike ${pattern}
+          ))`,
+      ),
+    )
+  return rows.map((r) => r.id)
 }
 
 export async function getCanonical(id: string, userId: string): Promise<CanonicalDetail | null> {

@@ -1,11 +1,13 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { publishCanonicalSchema } from '@/lib/canonicals'
-import { createCanonicalFromProject, listCanonicals } from '@/lib/db/queries'
+import { createCanonicalFromProject, listCanonicals, searchCanonicals } from '@/lib/db/queries'
 
-export async function GET() {
+export async function GET(req: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const q = new URL(req.url).searchParams.get('q')?.trim()
+  if (q) return NextResponse.json({ ids: await searchCanonicals(q.slice(0, 200)) })
   return NextResponse.json(await listCanonicals(userId))
 }
 

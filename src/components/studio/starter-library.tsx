@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BoxIcon, Clock3Icon, FileCode2Icon, SearchIcon, SparklesIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -48,15 +48,43 @@ export function StarterLibrary({
   const [starting, setStarting] = useState<string | null>(null)
   const [creatingBlank, setCreatingBlank] = useState(false)
 
+  /** Server matches (metadata, code, guide, file names) for the query they were fetched for. */
+  const [matches, setMatches] = useState<{ q: string; ids: Set<string> } | null>(null)
+  const trimmed = query.trim()
+
+  useEffect(() => {
+    if (!trimmed) return
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/canonicals?q=${encodeURIComponent(trimmed)}`, {
+          signal: controller.signal,
+        })
+        if (!res.ok) return
+        const { ids } = (await res.json()) as { ids: string[] }
+        setMatches({ q: trimmed, ids: new Set(ids) })
+      } catch {
+        // Aborted by a newer keystroke, or offline; the local filter still applies.
+      }
+    }, 250)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [trimmed])
+
   const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase()
+    const needle = trimmed.toLowerCase()
     if (!needle) return canonicals
-    return canonicals.filter((item) =>
-      [item.title, item.description, item.category ?? ''].some((value) =>
-        value.toLowerCase().includes(needle),
-      ),
+    const serverIds = matches?.q === trimmed ? matches.ids : null
+    return canonicals.filter(
+      (item) =>
+        serverIds?.has(item.id) ||
+        [item.title, item.description, item.category ?? ''].some((value) =>
+          value.toLowerCase().includes(needle),
+        ),
     )
-  }, [canonicals, query])
+  }, [canonicals, trimmed, matches])
 
   const openDetail = async (id: string) => {
     setLoadingDetail(id)
@@ -109,7 +137,7 @@ export function StarterLibrary({
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search canonical designs"
+              placeholder="Search titles, code, guides"
               className="h-10 border-white/10 bg-white/[0.04] pl-9"
             />
           </label>

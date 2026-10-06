@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
-import { createProject, forkProject, listProjects } from '@/lib/db/queries'
+import { createProject, forkProject, listProjects, searchProjects } from '@/lib/db/queries'
 
-export async function GET() {
+export async function GET(req: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const q = new URL(req.url).searchParams.get('q')?.trim()
+  if (q) return NextResponse.json({ ids: await searchProjects(userId, q.slice(0, 200)) })
   return NextResponse.json(await listProjects(userId))
 }
 
