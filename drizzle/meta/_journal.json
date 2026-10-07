@@ -36,6 +36,20 @@
       "when": 1787800573697,
       "tag": "0004_awesome_alex_power",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790049314546,
+      "tag": "0005_lethal_xorn",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790051166408,
+      "tag": "0006_ancient_santa_claus",
+      "breakpoints": true
     }
   ]
 }

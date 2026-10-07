@@ -1,6 +1,7 @@
 import { createAgentUIStreamResponse, generateId, validateUIMessages, type UIMessage } from 'ai'
 import { auth } from '@clerk/nextjs/server'
 import { createStudioAgent, studioTools, type StudioUIMessage } from '@/lib/agents/studio-agent'
+import { guardModelCall, spendGuardTextResponse } from '@/lib/spend-guard'
 import { getCanonicalModificationGuide, getProject, saveChat } from '@/lib/db/queries'
 
 export const maxDuration = 120
@@ -43,6 +44,11 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Project not found' }, { status: 404 })
   }
 
+  // Checked after ownership so a probe against someone else's project id
+  // cannot spend the caller's budget.
+  const verdict = await guardModelCall(userId)
+  if (!verdict.allowed) return spendGuardTextResponse(verdict)
+
   const uiMessages = (await validateUIMessages({
     messages: rawMessages,
     tools: studioTools,
@@ -68,9 +74,13 @@ export async function POST(req: Request) {
     // Without this the streamed assistant message has an empty id, which
     // breaks React keys and message identity once persisted.
     generateMessageId: generateId,
-    // Surface real error messages (e.g. missing OPENROUTER_API_KEY) instead
-    // of the SDK's masked default — this app has no secrets in errors.
-    onError: (error) => (error instanceof Error ? error.message : String(error)),
+    // Provider errors can carry account, key and model detail, so the browser
+    // gets a fixed sentence and the real error goes to the server log where
+    // operators can find it.
+    onError: (error) => {
+      console.error('[chat] agent stream failed', error)
+      return 'The AI service could not complete that request. Please try again.'
+    },
     onFinish: async ({ messages }) => {
       await saveChat({
         projectId,

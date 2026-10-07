@@ -75,6 +75,26 @@ function AttachImagesButton() {
   )
 }
 
+/**
+ * A failed request reaches us as its raw response body, which is JSON for most
+ * of our API routes. Unwrap it so the user reads the sentence rather than the
+ * envelope, and fall back to a neutral line for anything unrecognisable —
+ * network failures and framework errors are not written for end users.
+ */
+function errorText(error: Error): string {
+  const raw = error.message?.trim()
+  if (!raw) return 'Something went wrong. Please try again.'
+  if (raw.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw) as { error?: unknown }
+      if (typeof parsed.error === 'string' && parsed.error) return parsed.error
+    } catch {
+      // Not the JSON we expected; fall through to the raw text.
+    }
+  }
+  return raw
+}
+
 export function ChatPanel({
   projectId,
   code,
@@ -221,7 +241,7 @@ export function ChatPanel({
           ))}
           {error && (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-              {error.message}
+              {errorText(error)}
             </div>
           )}
         </ConversationContent>

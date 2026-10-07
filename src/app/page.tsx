@@ -2,34 +2,53 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
+import { WhatsAppButton } from '@/components/whatsapp-button'
 
-const SAMPLE_CODE = `// gear_mount.scad
-teeth = 12;
-bore = 5;
-
-color("tomato")
-  gear(teeth, mod = 2);
-
-color([0.2, 0.5, 1])
-  translate([0, 0, 8])
-    mounting_plate(bore);`
+/**
+ * The starter designs, shown with the same renders the studio uses in its
+ * starter library — these are pictures of what the app actually produces, not
+ * an illustration of it.
+ */
+const STARTERS = [
+  {
+    title: 'Two-layer name piggy bank',
+    blurb: 'Plate and a raised name. Prints on any two-colour setup.',
+    image: '/canonicals/two-layer-name-piggy-bank.webp',
+    width: 1200,
+    height: 800,
+  },
+  {
+    title: 'Three-layer name piggy bank',
+    blurb: 'Plate, outline and face, for the raised two-tone look.',
+    image: '/canonicals/three-layer-name-piggy-bank.webp',
+    width: 1200,
+    height: 800,
+  },
+  {
+    title: 'Two-name illusion',
+    blurb: 'Reads one name from the front, another from the side.',
+    image: '/canonicals/two-name-illusion.webp',
+    width: 1200,
+    height: 600,
+  },
+]
 
 const FEATURES = [
   {
-    title: 'Chat is the CAD',
-    body: 'Describe the part in plain language. An AI agent writes complete, parametric OpenSCAD — every turn is a full program, always renderable.',
+    title: 'Just say what you want',
+    body: 'No CAD, no measurements, no tutorials. Type "a piggy bank that says Veera in pink" and it gets built. Ask for changes the same way.',
   },
   {
-    title: 'Real OpenSCAD, in your browser',
-    body: 'The actual OpenSCAD compiler (WebAssembly, Manifold backend) renders live as you type. No install, no server round-trips.',
+    title: 'Watch it appear',
+    body: 'A real 3D model spins in your browser as the AI works. Turn it, look underneath, change your mind — it re-renders while you watch.',
   },
   {
-    title: 'Canonical designs stay reusable',
-    body: 'Begin from a canonical design or a blank model. Every derivative gets an independent workspace with its own chat, code, and files.',
+    title: 'Start from a favourite',
+    body: 'Piggy banks that spell a name, signs that read two different words from two sides. Open one, swap in your name, make it yours.',
   },
   {
-    title: 'Print-ready export',
-    body: 'Download binary STL, or 3MF with color() preserved as materials for multi-color slicing in Prusa, Bambu, or Cura.',
+    title: 'Ready for the printer',
+    body: 'Download STL, or 3MF with the colours already separated so a multi-colour printer knows which filament goes where.',
   },
 ]
 
@@ -90,73 +109,85 @@ export default async function LandingPage() {
       {/* Hero */}
       <section className="mx-auto max-w-6xl px-6 pb-20 pt-20 text-center">
         <h1 className="mx-auto max-w-3xl text-balance text-5xl font-semibold leading-tight tracking-tight sm:text-6xl">
-          Describe it. Watch it become a part.
+          Put their name on it.
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-pretty text-lg text-neutral-500">
-          An AI-powered OpenSCAD workshop by Everything&nbsp;3D. Chat your way to
-          precise, parametric 3D models — rendered live in the browser, exported
-          ready to print.
+          Piggy banks, keychains, name signs, little gifts that are obviously for
+          one person. Describe what you want, watch it take shape in 3D, and take
+          it away ready to print.
         </p>
-        <div className="mt-10 flex items-center justify-center gap-4">
+        <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
           <CtaLink href="/sign-up" large>
-            Start building — it&apos;s free
+            Make something — it&apos;s free
           </CtaLink>
           <CtaLink href="/sign-in" variant="outline" large>
             Sign in
           </CtaLink>
         </div>
 
-        {/* Product mock: prompt → code → model */}
-        <div className="mx-auto mt-16 grid max-w-4xl gap-4 text-left sm:grid-cols-2">
-          <div className="border border-neutral-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-widest text-neutral-400">
-              <span className="size-2 rounded-full bg-emerald-500" /> chat
-            </div>
-            <p className="bg-neutral-100 px-4 py-3 text-sm text-neutral-800">
-              a 12-tooth gear on a mounting plate, 5&nbsp;mm bore — make the gear
-              red and the plate blue
-            </p>
-            <pre className="mt-4 overflow-x-auto bg-neutral-900 p-4 font-mono text-xs leading-relaxed text-emerald-200/90">
-              {SAMPLE_CODE}
-            </pre>
-          </div>
-          <div className="flex flex-col border border-neutral-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-widest text-neutral-400">
-              <span className="flex items-center gap-2">
-                <span className="size-2 rounded-full bg-sky-500" /> live preview
+        {/* What you said, and what came back. The render is the real output
+            of the starter design, at the size it deserves. */}
+        <div className="mx-auto mt-16 max-w-4xl">
+          <figure className="overflow-hidden border border-neutral-200 bg-[#1b1d21] shadow-sm">
+            <Image
+              src="/canonicals/three-layer-name-piggy-bank.webp"
+              alt="A mint-green piggy bank spelling VEERA, with its name-plate lid beside it in pink and magenta"
+              width={1200}
+              height={800}
+              priority
+              // The render leaves empty space above and below the object, so
+              // it is cropped to a wider frame rather than shown letterboxed.
+              className="aspect-[16/9] w-full object-cover"
+            />
+            <figcaption className="flex flex-col gap-1 border-t border-white/10 px-5 py-4 text-left sm:flex-row sm:items-baseline sm:gap-3">
+              <span className="text-[11px] uppercase tracking-[0.2em] text-neutral-500">
+                You said
               </span>
-              <span className="bg-emerald-50 px-2 py-0.5 font-medium normal-case tracking-normal text-emerald-600">
-                Rendered
+              <span className="text-sm text-neutral-300">
+                “a piggy bank that spells VEERA — mint body, bubbly pink
+                letters, and a slot big enough for coins”
               </span>
-            </div>
-            <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-[#0f1115] py-10">
-              <svg viewBox="0 0 200 160" className="w-56" aria-hidden>
-                <g transform="translate(100,64)">
-                  {Array.from({ length: 12 }).map((_, i) => (
-                    <rect
-                      key={i}
-                      x="-6"
-                      y="-52"
-                      width="12"
-                      height="14"
-                      rx="2"
-                      fill="#ff6347"
-                      transform={`rotate(${i * 30})`}
-                    />
-                  ))}
-                  <circle r="42" fill="#ff6347" />
-                  <circle r="10" fill="#0f1115" />
-                </g>
-                <rect x="30" y="126" width="140" height="16" rx="4" fill="#3380ff" />
-                <circle cx="48" cy="134" r="4" fill="#0f1115" />
-                <circle cx="152" cy="134" r="4" fill="#0f1115" />
-              </svg>
-            </div>
-            <div className="mt-3 flex justify-end gap-2 text-xs text-neutral-500">
-              <span className="border border-neutral-300 px-2 py-1">↓ STL</span>
-              <span className="border border-neutral-300 px-2 py-1">↓ 3MF</span>
-            </div>
-          </div>
+            </figcaption>
+          </figure>
+          <p className="mt-3 text-sm text-neutral-500">
+            Then download it as STL, or 3MF with the colours kept separate.
+          </p>
+        </div>
+      </section>
+
+      {/* Starter gallery — real renders of the designs in the studio. */}
+      <section className="mx-auto max-w-6xl px-6 pb-24">
+        <div className="mb-8 text-center">
+          <h2 className="text-balance text-3xl font-semibold tracking-tight">
+            Start from one of these
+          </h2>
+          <p className="mx-auto mt-3 max-w-xl text-pretty text-neutral-500">
+            Open one, put in a name, and it is yours. Or start from nothing and
+            describe whatever you had in mind.
+          </p>
+        </div>
+        <div className="grid gap-6 sm:grid-cols-3">
+          {STARTERS.map((starter) => (
+            <Link
+              key={starter.title}
+              href="/sign-up"
+              className="group block border border-neutral-200 bg-white transition-colors hover:border-neutral-900"
+            >
+              <div className="overflow-hidden bg-[#1b1d21]">
+                <Image
+                  src={starter.image}
+                  alt={starter.title}
+                  width={starter.width}
+                  height={starter.height}
+                  className="h-44 w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                />
+              </div>
+              <div className="p-5">
+                <h3 className="text-sm font-semibold">{starter.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-neutral-500">{starter.blurb}</p>
+              </div>
+            </Link>
+          ))}
         </div>
       </section>
 
@@ -169,6 +200,24 @@ export default async function LandingPage() {
               <p className="mt-3 text-sm leading-relaxed text-neutral-500">{f.body}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Closing prompt */}
+      <section className="border-t border-neutral-200 bg-neutral-50">
+        <div className="mx-auto max-w-6xl px-6 py-16 text-center">
+          <h2 className="text-balance text-3xl font-semibold tracking-tight">
+            Whose name are you printing?
+          </h2>
+          <p className="mx-auto mt-4 max-w-xl text-pretty text-neutral-500">
+            Start from a piggy bank, swap in a name, and see it in 3D in about a
+            minute. No card, no software to install.
+          </p>
+          <div className="mt-8">
+            <CtaLink href="/sign-up" large>
+              Start for free
+            </CtaLink>
+          </div>
         </div>
       </section>
 
@@ -189,6 +238,8 @@ export default async function LandingPage() {
           </a>
         </div>
       </footer>
+
+      <WhatsAppButton />
     </div>
   )
 }

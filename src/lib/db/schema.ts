@@ -1,5 +1,6 @@
 import {
   bigserial,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -134,9 +135,60 @@ export const projectShares = pgTable('project_shares', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+/**
+ * One row per model-calling request, used only to keep a runaway script from
+ * draining the OpenRouter account. Rows older than the longest window are
+ * pruned on write, so this table stays proportional to recent activity rather
+ * than to total usage. It is a spend guard, not analytics: nothing here
+ * identifies a project, a prompt, or a response.
+ */
+export const modelCalls = pgTable(
+  'model_calls',
+  {
+    seq: bigserial('seq', { mode: 'number' }).primaryKey(),
+    /** Clerk user id the call was billed to. */
+    userId: text('user_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('model_calls_user_created_idx').on(t.userId, t.createdAt)],
+)
+
+/**
+ * A print order raised from a design, mirroring the draft order in Shopify.
+ *
+ * Shopify owns the money and the fulfilment state; this row exists so the
+ * studio can show a customer what they have already ordered, and so support can
+ * get from a design to its order without searching the Shopify admin. The
+ * measurements are kept because they are what the quote was computed from.
+ */
+export const printOrders = pgTable(
+  'print_orders',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** Clerk user id that placed the order. */
+    userId: text('user_id').notNull(),
+    /** Shopify's draft order gid and human-readable name (e.g. #D12). */
+    draftOrderId: text('draft_order_id').notNull(),
+    draftOrderName: text('draft_order_name').notNull(),
+    /** Where the customer goes to pay. Null if Shopify withheld it. */
+    invoiceUrl: text('invoice_url'),
+    /** Whole rupees quoted, and the measurements behind that number. */
+    totalInr: integer('total_inr').notNull(),
+    printMinutes: integer('print_minutes').notNull(),
+    filamentGrams: integer('filament_grams').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('print_orders_user_created_idx').on(t.userId, t.createdAt)],
+)
+
 export type ProjectRow = typeof projects.$inferSelect
 export type CanonicalDesignRow = typeof canonicalDesigns.$inferSelect
 export type CanonicalVersionRow = typeof canonicalVersions.$inferSelect
 export type MessageRow = typeof messages.$inferSelect
 export type WorkspaceFileRow = typeof workspaceFiles.$inferSelect
 export type ProjectShareRow = typeof projectShares.$inferSelect
+export type ModelCallRow = typeof modelCalls.$inferSelect
+export type PrintOrderRow = typeof printOrders.$inferSelect

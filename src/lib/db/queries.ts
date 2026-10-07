@@ -1,12 +1,14 @@
 import { randomBytes } from 'node:crypto'
-import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm'
 import { generateId, type UIMessage } from 'ai'
 import { db } from '.'
 import { buildCanonicalProjectSeed } from '../canonicals'
+import { BUILT_IN_CANONICALS, SYSTEM_CANONICAL_OWNER_ID } from '../builtin-canonicals'
 import {
   canonicalDesigns,
   canonicalVersions,
   messages,
+  printOrders,
   projects,
   projectShares,
   workspaceFiles,
@@ -391,14 +393,97 @@ function toCanonicalDetail(
   }
 }
 
+let builtInCanonicalSeed: Promise<void> | null = null
+
+/**
+ * Install the product-owned starter catalog on first use.
+ *
+ * Stable ids plus conflict-safe inserts make this safe to run from several
+ * serverless instances at once, and safe to run again after a deploy. The
+ * promise is memoised so concurrent readers share one round trip, and dropped
+ * on failure so a transient outage does not disable the catalog for the life
+ * of the process.
+ */
+async function ensureBuiltInCanonicals(): Promise<void> {
+  builtInCanonicalSeed ??= db
+    .transaction(async (tx) => {
+      for (const starter of BUILT_IN_CANONICALS) {
+        await tx
+          .insert(canonicalDesigns)
+          .values({
+            id: starter.id,
+            ownerId: SYSTEM_CANONICAL_OWNER_ID,
+            title: starter.title,
+            description: starter.description,
+            category: starter.category,
+            currentVersionId: starter.versionId,
+          })
+          .onConflictDoNothing()
+        await tx
+          .insert(canonicalVersions)
+          .values({
+            id: starter.versionId,
+            canonicalDesignId: starter.id,
+            versionNumber: starter.versionNumber,
+            code: starter.code,
+            files: [],
+            modificationGuide: starter.modificationGuide,
+            thumbnail: starter.thumbnail,
+            changeSummary: 'Initial built-in canonical design',
+            sourceProjectId: null,
+            createdBy: SYSTEM_CANONICAL_OWNER_ID,
+          })
+          .onConflictDoNothing()
+
+        // Retire rows left behind by an id rename, so a database seeded under
+        // the old id does not show the same design twice. Archiving rather
+        // than deleting keeps any workspace already started from one working.
+        if (starter.supersedes?.length) {
+          await tx
+            .update(canonicalDesigns)
+            .set({ archivedAt: new Date() })
+            .where(
+              and(
+                inArray(canonicalDesigns.id, [...starter.supersedes]),
+                isNull(canonicalDesigns.archivedAt),
+              ),
+            )
+        }
+      }
+    })
+    .catch((error) => {
+      builtInCanonicalSeed = null
+      throw error
+    })
+  return builtInCanonicalSeed
+}
+
+/** Where a starter sits in the curated order, or -1 for a user's own design. */
+function builtInRank(id: string): number {
+  return BUILT_IN_CANONICALS.findIndex((starter) => starter.id === id)
+}
+
 export async function listCanonicals(userId: string): Promise<CanonicalSummary[]> {
+  await ensureBuiltInCanonicals()
   const rows = await db
     .select({ design: canonicalDesigns, version: canonicalVersions })
     .from(canonicalDesigns)
     .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
     .where(isNull(canonicalDesigns.archivedAt))
     .orderBy(desc(canonicalDesigns.updatedAt))
-  return rows.map(({ design, version }) => toCanonicalSummary(design, version, userId))
+  // The starters are seeded in one transaction, so they all share a timestamp
+  // and cannot be ordered by it. Present them first, in the order they are
+  // declared — simplest design first — then everyone's own designs by recency.
+  return rows
+    .map(({ design, version }) => toCanonicalSummary(design, version, userId))
+    .sort((a, b) => {
+      const rankA = builtInRank(a.id)
+      const rankB = builtInRank(b.id)
+      if (rankA === -1 && rankB === -1) return 0
+      if (rankA === -1) return 1
+      if (rankB === -1) return -1
+      return rankA - rankB
+    })
 }
 
 /**
@@ -406,6 +491,7 @@ export async function listCanonicals(userId: string): Promise<CanonicalSummary[]
  * file names) contains `query`. File contents are base64 and not searched.
  */
 export async function searchCanonicals(query: string): Promise<string[]> {
+  await ensureBuiltInCanonicals()
   const pattern = containsPattern(query)
   const rows = await db
     .select({ id: canonicalDesigns.id })
@@ -429,6 +515,7 @@ export async function searchCanonicals(query: string): Promise<string[]> {
 }
 
 export async function getCanonical(id: string, userId: string): Promise<CanonicalDetail | null> {
+  await ensureBuiltInCanonicals()
   const [row] = await db
     .select({ design: canonicalDesigns, version: canonicalVersions })
     .from(canonicalDesigns)
@@ -815,4 +902,55 @@ export async function saveChat({
 
     await tx.update(projects).set(patch).where(eq(projects.id, projectId))
   })
+}
+
+/** How many orders a single account may raise in an hour. */
+const ORDERS_PER_HOUR = 10
+
+export interface RecordPrintOrderInput {
+  projectId: string
+  userId: string
+  draftOrderId: string
+  draftOrderName: string
+  invoiceUrl: string | null
+  totalInr: number
+  printMinutes: number
+  filamentGrams: number
+}
+
+/**
+ * Orders raised by this account in the last hour.
+ *
+ * A draft order lands in the shop's Shopify admin and a person looks at it, so
+ * an unbounded endpoint is a way to bury them in junk. This is the check that
+ * keeps that from happening.
+ */
+export async function recentOrderCount(userId: string): Promise<number> {
+  const since = new Date(Date.now() - 60 * 60 * 1000)
+  const [row] = await db
+    .select({ total: count() })
+    .from(printOrders)
+    .where(and(eq(printOrders.userId, userId), gte(printOrders.createdAt, since)))
+  return row?.total ?? 0
+}
+
+export function ordersPerHourLimit(): number {
+  const parsed = Number(process.env.ORDERS_PER_HOUR)
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : ORDERS_PER_HOUR
+}
+
+export async function recordPrintOrder(input: RecordPrintOrderInput): Promise<string> {
+  const id = generateId()
+  await db.insert(printOrders).values({
+    id,
+    projectId: input.projectId,
+    userId: input.userId,
+    draftOrderId: input.draftOrderId,
+    draftOrderName: input.draftOrderName,
+    invoiceUrl: input.invoiceUrl,
+    totalInr: Math.round(input.totalInr),
+    printMinutes: Math.round(input.printMinutes),
+    filamentGrams: Math.round(input.filamentGrams),
+  })
+  return id
 }
