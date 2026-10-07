@@ -1,9 +1,14 @@
 import { randomBytes } from 'node:crypto'
-import { and, asc, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import { generateId, type UIMessage } from 'ai'
 import { db } from '.'
 import { buildCanonicalProjectSeed } from '../canonicals'
-import { BUILT_IN_CANONICALS, SYSTEM_CANONICAL_OWNER_ID } from '../builtin-canonicals'
+import {
+  BUILT_IN_CANONICALS,
+  RETIRED_CANONICAL_IDS,
+  SYSTEM_CANONICAL_OWNER_ID,
+  builtInVersionId,
+} from '../builtin-canonicals'
 import {
   canonicalDesigns,
   canonicalVersions,
@@ -396,10 +401,19 @@ function toCanonicalDetail(
 let builtInCanonicalSeed: Promise<void> | null = null
 
 /**
- * Install the product-owned starter catalog on first use.
+ * Install the product-owned starter catalog on first use, and bring it up to
+ * date after a deploy that changed it.
  *
- * Stable ids plus conflict-safe inserts make this safe to run from several
- * serverless instances at once, and safe to run again after a deploy. The
+ * Each starter's current content lives in an immutable version row whose id
+ * is derived from that content, so an edited starter is published as the next
+ * version while workspaces started from an earlier one keep pointing at it.
+ * The design row is then pointed at the current version, with its title,
+ * description and category refreshed from code. Product-owned rows take their
+ * content from code, never from the database.
+ *
+ * Stable ids make this safe to run from several serverless instances at once:
+ * if two race to publish the same new version, one transaction fails on the
+ * unique version number and its caller retries on the next request. The
  * promise is memoised so concurrent readers share one round trip, and dropped
  * on failure so a transient outage does not disable the catalog for the life
  * of the process.
@@ -408,6 +422,7 @@ async function ensureBuiltInCanonicals(): Promise<void> {
   builtInCanonicalSeed ??= db
     .transaction(async (tx) => {
       for (const starter of BUILT_IN_CANONICALS) {
+        const versionId = builtInVersionId(starter)
         await tx
           .insert(canonicalDesigns)
           .values({
@@ -416,40 +431,75 @@ async function ensureBuiltInCanonicals(): Promise<void> {
             title: starter.title,
             description: starter.description,
             category: starter.category,
-            currentVersionId: starter.versionId,
+            currentVersionId: versionId,
           })
           .onConflictDoNothing()
-        await tx
-          .insert(canonicalVersions)
-          .values({
-            id: starter.versionId,
+
+        const [published] = await tx
+          .select({ id: canonicalVersions.id })
+          .from(canonicalVersions)
+          .where(eq(canonicalVersions.id, versionId))
+        if (!published) {
+          const [{ latest }] = await tx
+            .select({ latest: sql<number | null>`max(${canonicalVersions.versionNumber})` })
+            .from(canonicalVersions)
+            .where(eq(canonicalVersions.canonicalDesignId, starter.id))
+          const versionNumber = Number(latest ?? 0) + 1
+          await tx.insert(canonicalVersions).values({
+            id: versionId,
             canonicalDesignId: starter.id,
-            versionNumber: starter.versionNumber,
+            versionNumber,
             code: starter.code,
             files: [],
             modificationGuide: starter.modificationGuide,
             thumbnail: starter.thumbnail,
-            changeSummary: 'Initial built-in canonical design',
+            changeSummary:
+              versionNumber === 1
+                ? 'Initial built-in canonical design'
+                : 'Updated built-in canonical design',
             sourceProjectId: null,
             createdBy: SYSTEM_CANONICAL_OWNER_ID,
           })
-          .onConflictDoNothing()
-
-        // Retire rows left behind by an id rename, so a database seeded under
-        // the old id does not show the same design twice. Archiving rather
-        // than deleting keeps any workspace already started from one working.
-        if (starter.supersedes?.length) {
-          await tx
-            .update(canonicalDesigns)
-            .set({ archivedAt: new Date() })
-            .where(
-              and(
-                inArray(canonicalDesigns.id, [...starter.supersedes]),
-                isNull(canonicalDesigns.archivedAt),
-              ),
-            )
         }
+
+        // Only touch the row when something changed, so a routine cold start
+        // does not rewrite every starter's updated_at.
+        await tx
+          .update(canonicalDesigns)
+          .set({
+            title: starter.title,
+            description: starter.description,
+            category: starter.category,
+            currentVersionId: versionId,
+            archivedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(canonicalDesigns.id, starter.id),
+              eq(canonicalDesigns.ownerId, SYSTEM_CANONICAL_OWNER_ID),
+              or(
+                ne(canonicalDesigns.title, starter.title),
+                ne(canonicalDesigns.description, starter.description),
+                sql`${canonicalDesigns.category} is distinct from ${starter.category}`,
+                ne(canonicalDesigns.currentVersionId, versionId),
+                isNotNull(canonicalDesigns.archivedAt),
+              ),
+            ),
+          )
       }
+
+      // Retire rows the catalog replaced (renamed or merged starters) or took
+      // out of circulation. Archiving rather than deleting keeps any workspace
+      // already started from one working.
+      const retired = [
+        ...BUILT_IN_CANONICALS.flatMap((starter) => starter.supersedes ?? []),
+        ...RETIRED_CANONICAL_IDS,
+      ]
+      await tx
+        .update(canonicalDesigns)
+        .set({ archivedAt: new Date() })
+        .where(and(inArray(canonicalDesigns.id, retired), isNull(canonicalDesigns.archivedAt)))
     })
     .catch((error) => {
       builtInCanonicalSeed = null
@@ -473,7 +523,7 @@ export async function listCanonicals(userId: string): Promise<CanonicalSummary[]
     .orderBy(desc(canonicalDesigns.updatedAt))
   // The starters are seeded in one transaction, so they all share a timestamp
   // and cannot be ordered by it. Present them first, in the order they are
-  // declared — simplest design first — then everyone's own designs by recency.
+  // declared, hero first, then everyone's own designs by recency.
   return rows
     .map(({ design, version }) => toCanonicalSummary(design, version, userId))
     .sort((a, b) => {
