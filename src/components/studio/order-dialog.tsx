@@ -11,15 +11,29 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
-import { WhatsAppLink } from '@/components/whatsapp-button'
+import { WhatsAppIcon } from '@/components/whatsapp-button'
 import type { ParsedMesh } from '@/lib/openscad/off'
 import { estimatePrint } from '@/lib/print-estimate'
 import { formatDuration, formatInr, quoteForPrint, type Quote } from '@/lib/pricing'
+import { orderMessage, whatsAppUrl } from '@/lib/whatsapp'
 
 interface OrderResponse {
   orderName: string
   invoiceUrl: string | null
+  designUrl: string | null
   quote: Quote
+}
+
+/** A link to the design for the team, or null if one could not be made. */
+async function fetchDesignLink(projectId: string): Promise<string | null> {
+  try {
+    const response = await fetch(`/api/projects/${projectId}/design-link`, { method: 'POST' })
+    if (!response.ok) return null
+    const body = (await response.json()) as { url?: string }
+    return body.url ?? null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -30,6 +44,11 @@ interface OrderResponse {
  * the same measurements before creating the order, and the price the customer
  * actually pays is the one that comes back. If the two ever disagree, what is
  * displayed after confirming is the server's number.
+ *
+ * WhatsApp is always offered alongside checkout, for questions or for people
+ * who would rather not pay online, and it is the only way to order when
+ * Shopify is not configured. Either way the message carries a link to the
+ * design and the quote shown here, so the team can follow up without asking.
  */
 export function OrderDialog({
   open,
@@ -37,16 +56,30 @@ export function OrderDialog({
   projectId,
   projectName,
   mesh,
+  checkoutEnabled,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   projectId: string
   projectName: string
   mesh: ParsedMesh | null
+  /** False when Shopify is not configured: WhatsApp is then the way to order. */
+  checkoutEnabled: boolean
 }) {
   const [status, setStatus] = useState<'idle' | 'placing' | 'placed' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [order, setOrder] = useState<OrderResponse | null>(null)
+  const [openingWhatsApp, setOpeningWhatsApp] = useState(false)
+
+  // An order belongs to the design it was placed for. If the design changes
+  // while the dialog stays mounted, start over rather than show the old one.
+  const [orderedMesh, setOrderedMesh] = useState(mesh)
+  if (mesh !== orderedMesh) {
+    setOrderedMesh(mesh)
+    setStatus('idle')
+    setError(null)
+    setOrder(null)
+  }
 
   const estimate = useMemo(() => (mesh ? estimatePrint(mesh) : null), [mesh])
   const preview = useMemo(
@@ -92,7 +125,42 @@ export function OrderDialog({
     }
   }
 
+  async function openWhatsApp() {
+    // Open the tab inside the click, before awaiting anything, or mobile
+    // browsers treat it as a popup and block it.
+    const tab = window.open('', '_blank')
+    setOpeningWhatsApp(true)
+    const designUrl = order?.designUrl ?? (await fetchDesignLink(projectId))
+    setOpeningWhatsApp(false)
+    const url = whatsAppUrl(
+      orderMessage({
+        designName: projectName,
+        designUrl,
+        quote,
+        sizeMm: estimate?.boundingBox.size,
+        orderName: order?.orderName,
+      }),
+    )
+    if (tab) {
+      tab.opener = null
+      tab.location.href = url
+    } else {
+      window.location.href = url
+    }
+  }
+
   const size = estimate?.boundingBox.size
+  const whatsAppButton = (
+    <Button
+      variant={checkoutEnabled ? 'outline' : 'default'}
+      onClick={() => void openWhatsApp()}
+      disabled={openingWhatsApp}
+      className={checkoutEnabled ? undefined : 'bg-[#25D366] text-white hover:bg-[#1ebe5a]'}
+    >
+      {openingWhatsApp ? <Spinner /> : <WhatsAppIcon className="size-4" />}
+      {checkoutEnabled ? 'Ask on WhatsApp' : 'Order on WhatsApp'}
+    </Button>
+  )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -136,7 +204,9 @@ export function OrderDialog({
                 <span>Total</span>
                 <span className="text-lg">{formatInr(quote.totalInr)}</span>
               </div>
-              <p className="text-xs text-muted-foreground">Shipping is added at checkout.</p>
+              <p className="text-xs text-muted-foreground">
+                {checkoutEnabled ? 'Shipping is added at checkout.' : 'Shipping is extra.'}
+              </p>
             </div>
 
             {status === 'placed' && (
@@ -158,14 +228,15 @@ export function OrderDialog({
           </div>
         )}
 
-        <DialogFooter className="sm:justify-between">
-          <WhatsAppLink
-            context="order"
-            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-          >
-            Rather order on WhatsApp?
-          </WhatsAppLink>
-          {status === 'placed' && order?.invoiceUrl ? (
+        <p className="text-xs text-muted-foreground">
+          {checkoutEnabled
+            ? 'Questions, or rather not pay online? Message us on WhatsApp. Your design link and this quote come with the message.'
+            : 'Message us on WhatsApp to order. Your design link and this quote come with the message, and we confirm before printing.'}
+        </p>
+
+        <DialogFooter className="gap-2 sm:justify-between">
+          {whatsAppButton}
+          {!checkoutEnabled ? null : status === 'placed' && order?.invoiceUrl ? (
             <Button
               onClick={() => window.open(order.invoiceUrl ?? '', '_blank', 'noopener,noreferrer')}
             >

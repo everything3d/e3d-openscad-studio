@@ -21,9 +21,8 @@
 const API_VERSION = '2026-07'
 
 /**
- * The shop's presentment currency. `priceOverride` has to be expressed in it,
- * and Shopify converts if it does not match, which would quietly change what
- * the customer is charged.
+ * The shop's presentment currency. The line item price is expressed in it and
+ * the draft order is pinned to it, because Shopify requires the two to match.
  */
 const CURRENCY = process.env.SHOPIFY_CURRENCY ?? 'INR'
 
@@ -61,9 +60,9 @@ function normaliseStoreDomain(raw: string): string {
 /**
  * The configured store, or null when Shopify is not set up.
  *
- * Ordering is switched on by configuring the store and one set of credentials
- * and nothing else, so a deployment without them serves the whole studio with
- * the order button hidden rather than failing at request time.
+ * Online checkout is switched on by configuring the store and one set of
+ * credentials and nothing else. A deployment without them still quotes prints,
+ * and the order dialog sends customers to WhatsApp instead of Shopify.
  */
 export function shopifyConfig(): ShopifyConfig | null {
   const rawDomain = process.env.SHOPIFY_STORE_DOMAIN
@@ -251,9 +250,11 @@ export async function createDraftOrder(
           quantity: 1,
           // Every print is priced from its own geometry, so there is no
           // catalog variant to reference — this is a custom line item whose
-          // price is set outright. `originalUnitPrice` used to do this and is
-          // deprecated; `priceOverride` takes a MoneyInput, not a string.
-          priceOverride: {
+          // price is set outright. That is `originalUnitPriceWithCurrency`.
+          // `priceOverride` looks right but only replaces a catalog variant's
+          // price: on a custom line item Shopify ignores it and the print
+          // goes through at ₹0.
+          originalUnitPriceWithCurrency: {
             amount: input.priceInr.toFixed(2),
             currencyCode: CURRENCY,
           },
@@ -262,6 +263,7 @@ export async function createDraftOrder(
         },
       ],
       note: input.note,
+      presentmentCurrencyCode: CURRENCY,
       tags: ['e3d-studio'],
       ...(input.email ? { email: input.email } : {}),
     },

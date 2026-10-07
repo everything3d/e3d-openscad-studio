@@ -118,15 +118,19 @@ describe('createDraftOrder', () => {
     expect(fetchMock.mock.calls[0][1].headers['X-Shopify-Access-Token']).toBe('shpat_test')
   })
 
-  it('sets a custom price with priceOverride, not the deprecated field', async () => {
+  it('prices the custom line item with originalUnitPriceWithCurrency', async () => {
     const fetchMock = mockShopify(OK_RESPONSE)
     await createDraftOrder({ title: 'Bank', priceInr: 427, note: 'n' }, CREDENTIALS)
 
-    const [line] = sentBody(fetchMock).variables.input.lineItems
-    expect(line.priceOverride).toEqual({ amount: '427.00', currencyCode: 'INR' })
-    // originalUnitPrice is deprecated and ignored on current versions, which
-    // would silently create a zero-priced order.
+    const { input } = sentBody(fetchMock).variables
+    const [line] = input.lineItems
+    expect(line.originalUnitPriceWithCurrency).toEqual({ amount: '427.00', currencyCode: 'INR' })
+    // priceOverride only replaces a catalog variant's price. Shopify ignores it
+    // on a custom line item, which created ₹0 orders on the live store.
+    expect(line).not.toHaveProperty('priceOverride')
+    // The deprecated string field is ignored on current versions too.
     expect(line).not.toHaveProperty('originalUnitPrice')
+    expect(input.presentmentCurrencyCode).toBe('INR')
     expect(line.quantity).toBe(1)
     expect(line.requiresShipping).toBe(true)
     // A custom line item must not reference a catalog variant.

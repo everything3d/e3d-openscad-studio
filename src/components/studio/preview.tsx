@@ -12,7 +12,7 @@ import { DEFAULT_FACE_COLOR, type ParsedMesh } from '@/lib/openscad/off'
 interface Props {
   render: RenderState
   onExport: (format: 'stl' | '3mf') => void
-  /** Omitted when ordering is not configured, which hides the button. */
+  /** Opens the order dialog; omitted where ordering does not apply. */
   onOrder?: () => void
   onThumbnailReady?: (thumbnail: string | null) => void
 }
