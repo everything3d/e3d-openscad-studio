@@ -12,6 +12,8 @@ import { DEFAULT_FACE_COLOR, type ParsedMesh } from '@/lib/openscad/off'
 interface Props {
   render: RenderState
   onExport: (format: 'stl' | '3mf') => void
+  /** Opens the order dialog; omitted where ordering does not apply. */
+  onOrder?: () => void
   onThumbnailReady?: (thumbnail: string | null) => void
 }
 
@@ -61,7 +63,7 @@ const badgeLabels: Record<RenderState['status'], string> = {
   error: 'Error',
 }
 
-export function Preview({ render, onExport, onThumbnailReady }: Props) {
+export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
@@ -222,6 +224,11 @@ export function Preview({ render, onExport, onThumbnailReady }: Props) {
         </div>
       )}
       <div className="absolute right-3 top-3 flex items-center gap-2">
+        {onOrder && (
+          <Button size="sm" disabled={!render.mesh} onClick={onOrder} title="Order this print">
+            Order this print
+          </Button>
+        )}
         <Button
           variant="secondary"
           size="sm"

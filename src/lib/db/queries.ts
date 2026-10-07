@@ -1,12 +1,19 @@
 import { randomBytes } from 'node:crypto'
-import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import { generateId, type UIMessage } from 'ai'
 import { db } from '.'
 import { buildCanonicalProjectSeed } from '../canonicals'
 import {
+  BUILT_IN_CANONICALS,
+  RETIRED_CANONICAL_IDS,
+  SYSTEM_CANONICAL_OWNER_ID,
+  builtInVersionId,
+} from '../builtin-canonicals'
+import {
   canonicalDesigns,
   canonicalVersions,
   messages,
+  printOrders,
   projects,
   projectShares,
   workspaceFiles,
@@ -391,14 +398,142 @@ function toCanonicalDetail(
   }
 }
 
+let builtInCanonicalSeed: Promise<void> | null = null
+
+/**
+ * Install the product-owned starter catalog on first use, and bring it up to
+ * date after a deploy that changed it.
+ *
+ * Each starter's current content lives in an immutable version row whose id
+ * is derived from that content, so an edited starter is published as the next
+ * version while workspaces started from an earlier one keep pointing at it.
+ * The design row is then pointed at the current version, with its title,
+ * description and category refreshed from code. Product-owned rows take their
+ * content from code, never from the database.
+ *
+ * Stable ids make this safe to run from several serverless instances at once:
+ * if two race to publish the same new version, one transaction fails on the
+ * unique version number and its caller retries on the next request. The
+ * promise is memoised so concurrent readers share one round trip, and dropped
+ * on failure so a transient outage does not disable the catalog for the life
+ * of the process.
+ */
+async function ensureBuiltInCanonicals(): Promise<void> {
+  builtInCanonicalSeed ??= db
+    .transaction(async (tx) => {
+      for (const starter of BUILT_IN_CANONICALS) {
+        const versionId = builtInVersionId(starter)
+        await tx
+          .insert(canonicalDesigns)
+          .values({
+            id: starter.id,
+            ownerId: SYSTEM_CANONICAL_OWNER_ID,
+            title: starter.title,
+            description: starter.description,
+            category: starter.category,
+            currentVersionId: versionId,
+          })
+          .onConflictDoNothing()
+
+        const [published] = await tx
+          .select({ id: canonicalVersions.id })
+          .from(canonicalVersions)
+          .where(eq(canonicalVersions.id, versionId))
+        if (!published) {
+          const [{ latest }] = await tx
+            .select({ latest: sql<number | null>`max(${canonicalVersions.versionNumber})` })
+            .from(canonicalVersions)
+            .where(eq(canonicalVersions.canonicalDesignId, starter.id))
+          const versionNumber = Number(latest ?? 0) + 1
+          await tx.insert(canonicalVersions).values({
+            id: versionId,
+            canonicalDesignId: starter.id,
+            versionNumber,
+            code: starter.code,
+            files: [],
+            modificationGuide: starter.modificationGuide,
+            thumbnail: starter.thumbnail,
+            changeSummary:
+              versionNumber === 1
+                ? 'Initial built-in canonical design'
+                : 'Updated built-in canonical design',
+            sourceProjectId: null,
+            createdBy: SYSTEM_CANONICAL_OWNER_ID,
+          })
+        }
+
+        // Only touch the row when something changed, so a routine cold start
+        // does not rewrite every starter's updated_at.
+        await tx
+          .update(canonicalDesigns)
+          .set({
+            title: starter.title,
+            description: starter.description,
+            category: starter.category,
+            currentVersionId: versionId,
+            archivedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(canonicalDesigns.id, starter.id),
+              eq(canonicalDesigns.ownerId, SYSTEM_CANONICAL_OWNER_ID),
+              or(
+                ne(canonicalDesigns.title, starter.title),
+                ne(canonicalDesigns.description, starter.description),
+                sql`${canonicalDesigns.category} is distinct from ${starter.category}`,
+                ne(canonicalDesigns.currentVersionId, versionId),
+                isNotNull(canonicalDesigns.archivedAt),
+              ),
+            ),
+          )
+      }
+
+      // Retire rows the catalog replaced (renamed or merged starters) or took
+      // out of circulation. Archiving rather than deleting keeps any workspace
+      // already started from one working.
+      const retired = [
+        ...BUILT_IN_CANONICALS.flatMap((starter) => starter.supersedes ?? []),
+        ...RETIRED_CANONICAL_IDS,
+      ]
+      await tx
+        .update(canonicalDesigns)
+        .set({ archivedAt: new Date() })
+        .where(and(inArray(canonicalDesigns.id, retired), isNull(canonicalDesigns.archivedAt)))
+    })
+    .catch((error) => {
+      builtInCanonicalSeed = null
+      throw error
+    })
+  return builtInCanonicalSeed
+}
+
+/** Where a starter sits in the curated order, or -1 for a user's own design. */
+function builtInRank(id: string): number {
+  return BUILT_IN_CANONICALS.findIndex((starter) => starter.id === id)
+}
+
 export async function listCanonicals(userId: string): Promise<CanonicalSummary[]> {
+  await ensureBuiltInCanonicals()
   const rows = await db
     .select({ design: canonicalDesigns, version: canonicalVersions })
     .from(canonicalDesigns)
     .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
     .where(isNull(canonicalDesigns.archivedAt))
     .orderBy(desc(canonicalDesigns.updatedAt))
-  return rows.map(({ design, version }) => toCanonicalSummary(design, version, userId))
+  // The starters are seeded in one transaction, so they all share a timestamp
+  // and cannot be ordered by it. Present them first, in the order they are
+  // declared, hero first, then everyone's own designs by recency.
+  return rows
+    .map(({ design, version }) => toCanonicalSummary(design, version, userId))
+    .sort((a, b) => {
+      const rankA = builtInRank(a.id)
+      const rankB = builtInRank(b.id)
+      if (rankA === -1 && rankB === -1) return 0
+      if (rankA === -1) return 1
+      if (rankB === -1) return -1
+      return rankA - rankB
+    })
 }
 
 /**
@@ -406,6 +541,7 @@ export async function listCanonicals(userId: string): Promise<CanonicalSummary[]
  * file names) contains `query`. File contents are base64 and not searched.
  */
 export async function searchCanonicals(query: string): Promise<string[]> {
+  await ensureBuiltInCanonicals()
   const pattern = containsPattern(query)
   const rows = await db
     .select({ id: canonicalDesigns.id })
@@ -429,6 +565,7 @@ export async function searchCanonicals(query: string): Promise<string[]> {
 }
 
 export async function getCanonical(id: string, userId: string): Promise<CanonicalDetail | null> {
+  await ensureBuiltInCanonicals()
   const [row] = await db
     .select({ design: canonicalDesigns, version: canonicalVersions })
     .from(canonicalDesigns)
@@ -633,22 +770,71 @@ export async function replaceProjectShare(
   return db.transaction(async (tx) => {
     const snapshot = await loadProjectSnapshot(tx, projectId, userId)
     if (!snapshot) return null
+    return writeProjectShare(tx, projectId, userId, snapshot)
+  })
+}
 
-    await tx.delete(projectShares).where(eq(projectShares.projectId, projectId))
+async function writeProjectShare(
+  tx: DbTransaction,
+  projectId: string,
+  userId: string,
+  snapshot: ProjectSnapshot,
+): Promise<ProjectShareLink> {
+  await tx.delete(projectShares).where(eq(projectShares.projectId, projectId))
 
-    const [share] = await tx
-      .insert(projectShares)
-      .values({
-        id: generateId(),
-        projectId,
-        ownerId: userId,
-        token: randomBytes(32).toString('base64url'),
-        snapshotName: snapshot.name,
-        snapshot,
+  const [share] = await tx
+    .insert(projectShares)
+    .values({
+      id: generateId(),
+      projectId,
+      ownerId: userId,
+      token: randomBytes(32).toString('base64url'),
+      snapshotName: snapshot.name,
+      snapshot,
+    })
+    .returning({ token: projectShares.token, createdAt: projectShares.createdAt })
+
+  return shareLink(share.token, share.createdAt)
+}
+
+/** Same code and the same workspace files, ignoring chat history and names. */
+function sameDesign(a: Pick<ProjectArtifacts, 'code' | 'files'>, b: Pick<ProjectArtifacts, 'code' | 'files'>) {
+  return (
+    a.code === b.code &&
+    a.files.length === b.files.length &&
+    a.files.every((file, i) => file.name === b.files[i].name && file.data === b.files[i].data)
+  )
+}
+
+/**
+ * A link the shop can open to see exactly the design being ordered.
+ *
+ * Projects are private, so an order or a WhatsApp message needs a share
+ * snapshot to point at. An existing link is reused when it already shows the
+ * current design, so a link the owner has handed out keeps working; it is only
+ * replaced when the design has changed since, because a stale snapshot would
+ * have the shop print the wrong thing.
+ */
+export async function designLinkForOrder(
+  projectId: string,
+  userId: string,
+): Promise<ProjectShareLink | null> {
+  return db.transaction(async (tx) => {
+    const snapshot = await loadProjectSnapshot(tx, projectId, userId)
+    if (!snapshot) return null
+
+    const [existing] = await tx
+      .select({
+        token: projectShares.token,
+        createdAt: projectShares.createdAt,
+        snapshot: projectShares.snapshot,
       })
-      .returning({ token: projectShares.token, createdAt: projectShares.createdAt })
-
-    return shareLink(share.token, share.createdAt)
+      .from(projectShares)
+      .where(and(eq(projectShares.projectId, projectId), eq(projectShares.ownerId, userId)))
+    if (existing && sameDesign(existing.snapshot as ProjectSnapshot, snapshot)) {
+      return shareLink(existing.token, existing.createdAt)
+    }
+    return writeProjectShare(tx, projectId, userId, snapshot)
   })
 }
 
@@ -815,4 +1001,55 @@ export async function saveChat({
 
     await tx.update(projects).set(patch).where(eq(projects.id, projectId))
   })
+}
+
+/** How many orders a single account may raise in an hour. */
+const ORDERS_PER_HOUR = 10
+
+export interface RecordPrintOrderInput {
+  projectId: string
+  userId: string
+  draftOrderId: string
+  draftOrderName: string
+  invoiceUrl: string | null
+  totalInr: number
+  printMinutes: number
+  filamentGrams: number
+}
+
+/**
+ * Orders raised by this account in the last hour.
+ *
+ * A draft order lands in the shop's Shopify admin and a person looks at it, so
+ * an unbounded endpoint is a way to bury them in junk. This is the check that
+ * keeps that from happening.
+ */
+export async function recentOrderCount(userId: string): Promise<number> {
+  const since = new Date(Date.now() - 60 * 60 * 1000)
+  const [row] = await db
+    .select({ total: count() })
+    .from(printOrders)
+    .where(and(eq(printOrders.userId, userId), gte(printOrders.createdAt, since)))
+  return row?.total ?? 0
+}
+
+export function ordersPerHourLimit(): number {
+  const parsed = Number(process.env.ORDERS_PER_HOUR)
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : ORDERS_PER_HOUR
+}
+
+export async function recordPrintOrder(input: RecordPrintOrderInput): Promise<string> {
+  const id = generateId()
+  await db.insert(printOrders).values({
+    id,
+    projectId: input.projectId,
+    userId: input.userId,
+    draftOrderId: input.draftOrderId,
+    draftOrderName: input.draftOrderName,
+    invoiceUrl: input.invoiceUrl,
+    totalInr: Math.round(input.totalInr),
+    printMinutes: Math.round(input.printMinutes),
+    filamentGrams: Math.round(input.filamentGrams),
+  })
+  return id
 }

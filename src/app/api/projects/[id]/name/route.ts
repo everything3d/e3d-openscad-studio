@@ -3,6 +3,7 @@ import { auth } from '@clerk/nextjs/server'
 import { autoNameProject, getProject } from '@/lib/db/queries'
 import { generateProjectName } from '@/lib/agents/name-project'
 import { PLACEHOLDER_PROJECT_NAME } from '@/lib/types'
+import { guardModelCall, spendGuardResponse } from '@/lib/spend-guard'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -23,6 +24,9 @@ export async function POST(req: Request, { params }: Params) {
   if (project.name !== PLACEHOLDER_PROJECT_NAME) {
     return NextResponse.json({ name: project.name })
   }
+
+  const verdict = await guardModelCall(userId)
+  if (!verdict.allowed) return spendGuardResponse(verdict)
 
   const name = await generateProjectName(text ?? '')
   if (!name) return NextResponse.json({ name: project.name })

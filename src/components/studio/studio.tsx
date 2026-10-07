@@ -22,6 +22,7 @@ import { ShareProjectDialog } from './share-project-dialog'
 import { WorkspacePanel } from './workspace-panel'
 import { StarterLibrary } from './starter-library'
 import { SaveAsStarterDialog } from './save-as-starter-dialog'
+import { OrderDialog } from './order-dialog'
 
 type OpenProject = FullProject & { messages: StudioUIMessage[] }
 type RightTab = 'preview' | 'code' | 'files'
@@ -30,10 +31,13 @@ export function Studio({
   initialProjects,
   initialCanonicals,
   initialActiveId = null,
+  checkoutEnabled = false,
 }: {
   initialProjects: ProjectSummary[]
   initialCanonicals: CanonicalSummary[]
   initialActiveId?: string | null
+  /** False when Shopify is not configured: orders then go through WhatsApp. */
+  checkoutEnabled?: boolean
 }) {
   const [projects, setProjects] = useState<ProjectSummary[]>(initialProjects)
   const [canonicals, setCanonicals] = useState<CanonicalSummary[]>(initialCanonicals)
@@ -41,6 +45,7 @@ export function Studio({
   const [project, setProject] = useState<OpenProject | null>(null)
   const [rightTab, setRightTab] = useState<RightTab>('preview')
   const [thumbnail, setThumbnail] = useState<string | null>(null)
+  const [orderOpen, setOrderOpen] = useState(false)
 
   const { state: renderState, render, reset: resetRenderer, exportModel } = useRenderer()
 
@@ -356,6 +361,7 @@ export function Studio({
                   render={renderState}
                   onExport={(f) => void handleExport(f)}
                   onThumbnailReady={setThumbnail}
+                  onOrder={() => setOrderOpen(true)}
                 />
               </div>
               <div className={cn('absolute inset-0', rightTab !== 'code' && 'hidden')}>
@@ -371,6 +377,17 @@ export function Studio({
         </div>
         )}
       </main>
+
+      {project && (
+        <OrderDialog
+          open={orderOpen}
+          onOpenChange={setOrderOpen}
+          projectId={project.id}
+          projectName={project.name}
+          mesh={renderState.mesh}
+          checkoutEnabled={checkoutEnabled}
+        />
+      )}
     </div>
   )
 }

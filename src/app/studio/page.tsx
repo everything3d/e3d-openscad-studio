@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 import { listCanonicals, listProjects } from '@/lib/db/queries'
 import { Studio } from '@/components/studio/studio'
+import { isOrderingEnabled } from '@/lib/shopify'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +20,7 @@ export default async function StudioPage({ searchParams }: Props) {
       initialProjects={projects}
       initialCanonicals={canonicals}
       initialActiveId={initialActiveId}
+      checkoutEnabled={isOrderingEnabled()}
     />
   )
 }
