@@ -5,6 +5,7 @@
 // ("mesh is not closed" etc.) and is much faster.
 import { unzipSync } from 'fflate'
 import OpenSCAD from './vendor/openscad.js'
+import { openscadArgs } from './args'
 import {
   BUNDLED_FAMILIES,
   extractCatalogFontSpecs,
@@ -186,15 +187,7 @@ async function render(
   fs.writeFile('/input.scad', code)
 
   try {
-    // Manifold backend: robust against the almost-degenerate geometry CGAL
-    // rejects, and the only one that emits per-face colors in OFF output.
-    instance.callMain([
-      '/input.scad',
-      '--backend=manifold',
-      `--export-format=${format}`,
-      '-o',
-      '/output.dat',
-    ])
+    instance.callMain(openscadArgs(format))
   } catch (e) {
     throw new Error(
       cleanLog() || String(e) || 'OpenSCAD failed to run.',
