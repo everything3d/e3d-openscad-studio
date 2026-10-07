@@ -20,7 +20,7 @@ export default async function StudioPage({ searchParams }: Props) {
       initialProjects={projects}
       initialCanonicals={canonicals}
       initialActiveId={initialActiveId}
-      orderingEnabled={isOrderingEnabled()}
+      checkoutEnabled={isOrderingEnabled()}
     />
   )
 }

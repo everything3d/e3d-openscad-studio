@@ -31,13 +31,13 @@ export function Studio({
   initialProjects,
   initialCanonicals,
   initialActiveId = null,
-  orderingEnabled = false,
+  checkoutEnabled = false,
 }: {
   initialProjects: ProjectSummary[]
   initialCanonicals: CanonicalSummary[]
   initialActiveId?: string | null
-  /** False when Shopify is not configured, which hides the order button. */
-  orderingEnabled?: boolean
+  /** False when Shopify is not configured: orders then go through WhatsApp. */
+  checkoutEnabled?: boolean
 }) {
   const [projects, setProjects] = useState<ProjectSummary[]>(initialProjects)
   const [canonicals, setCanonicals] = useState<CanonicalSummary[]>(initialCanonicals)
@@ -361,7 +361,7 @@ export function Studio({
                   render={renderState}
                   onExport={(f) => void handleExport(f)}
                   onThumbnailReady={setThumbnail}
-                  onOrder={orderingEnabled ? () => setOrderOpen(true) : undefined}
+                  onOrder={() => setOrderOpen(true)}
                 />
               </div>
               <div className={cn('absolute inset-0', rightTab !== 'code' && 'hidden')}>
@@ -378,13 +378,14 @@ export function Studio({
         )}
       </main>
 
-      {project && orderingEnabled && (
+      {project && (
         <OrderDialog
           open={orderOpen}
           onOpenChange={setOrderOpen}
           projectId={project.id}
           projectName={project.name}
           mesh={renderState.mesh}
+          checkoutEnabled={checkoutEnabled}
         />
       )}
     </div>

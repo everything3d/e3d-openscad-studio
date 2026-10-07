@@ -61,9 +61,9 @@ function normaliseStoreDomain(raw: string): string {
 /**
  * The configured store, or null when Shopify is not set up.
  *
- * Ordering is switched on by configuring the store and one set of credentials
- * and nothing else, so a deployment without them serves the whole studio with
- * the order button hidden rather than failing at request time.
+ * Online checkout is switched on by configuring the store and one set of
+ * credentials and nothing else. A deployment without them still quotes prints,
+ * and the order dialog sends customers to WhatsApp instead of Shopify.
  */
 export function shopifyConfig(): ShopifyConfig | null {
   const rawDomain = process.env.SHOPIFY_STORE_DOMAIN

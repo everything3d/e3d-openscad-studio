@@ -2,6 +2,7 @@ import { auth, currentUser } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
+  designLinkForOrder,
   getProject,
   ordersPerHourLimit,
   recentOrderCount,
@@ -65,11 +66,22 @@ export async function POST(req: Request, { params }: Params) {
   const quote = quoteForPrint(measurements)
   const [width, depth, height] = measurements.boundingBoxMm
 
+  // Projects are private, so the shop needs a share link to see what it is
+  // printing. Best effort: an order without one still has the measurements,
+  // and the team can ask for the design.
+  const designUrl = await designLinkForOrder(id, userId)
+    .then((link) => (link ? new URL(link.path, req.url).toString() : null))
+    .catch((error) => {
+      console.error('[order] could not create a design link', error)
+      return null
+    })
+
   // Whoever picks this up in the Shopify admin needs to be able to check the
   // quote without opening the studio, so the numbers travel with the order.
   const note = [
     `E3D Studio design: ${project.name}`,
     `Design ID: ${id}`,
+    designUrl ? `Design link: ${designUrl}` : 'Design link: unavailable, ask the customer',
     '',
     `Size: ${width.toFixed(1)} x ${depth.toFixed(1)} x ${height.toFixed(1)} mm`,
     `Estimated print time: ${formatDuration(measurements.printMinutes)}`,
@@ -78,12 +90,13 @@ export async function POST(req: Request, { params }: Params) {
     `Handling: ${formatInr(quote.baseFeeInr)}`,
     `Print time: ${formatInr(quote.timeInr)}`,
     `Material: ${formatInr(quote.materialInr)}`,
-    quote.minimumApplied ? `Minimum order applied: ${formatInr(quote.totalInr)}` : '',
+    quote.minimumApplied ? `Minimum order applied: ${formatInr(quote.totalInr)}` : null,
     `Total: ${formatInr(quote.totalInr)}`,
     '',
     'Estimates are computed from the model geometry, not a slicer. Confirm before printing.',
   ]
-    .filter(Boolean)
+    // Drop absent lines but keep the blank ones that separate sections.
+    .filter((line) => line !== null)
     .join('\n')
 
   let draftOrder
@@ -98,6 +111,7 @@ export async function POST(req: Request, { params }: Params) {
         customAttributes: [
           { key: 'Design', value: project.name },
           { key: 'Design ID', value: id },
+          ...(designUrl ? [{ key: 'Design link', value: designUrl }] : []),
           { key: 'Estimated print time', value: formatDuration(measurements.printMinutes) },
           { key: 'Estimated filament', value: `${measurements.filamentGrams.toFixed(0)} g` },
         ],
@@ -128,6 +142,7 @@ export async function POST(req: Request, { params }: Params) {
   return NextResponse.json({
     orderName: draftOrder.name,
     invoiceUrl: draftOrder.invoiceUrl,
+    designUrl,
     quote,
   })
 }

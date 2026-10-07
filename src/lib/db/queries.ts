@@ -770,22 +770,71 @@ export async function replaceProjectShare(
   return db.transaction(async (tx) => {
     const snapshot = await loadProjectSnapshot(tx, projectId, userId)
     if (!snapshot) return null
+    return writeProjectShare(tx, projectId, userId, snapshot)
+  })
+}
 
-    await tx.delete(projectShares).where(eq(projectShares.projectId, projectId))
+async function writeProjectShare(
+  tx: DbTransaction,
+  projectId: string,
+  userId: string,
+  snapshot: ProjectSnapshot,
+): Promise<ProjectShareLink> {
+  await tx.delete(projectShares).where(eq(projectShares.projectId, projectId))
 
-    const [share] = await tx
-      .insert(projectShares)
-      .values({
-        id: generateId(),
-        projectId,
-        ownerId: userId,
-        token: randomBytes(32).toString('base64url'),
-        snapshotName: snapshot.name,
-        snapshot,
+  const [share] = await tx
+    .insert(projectShares)
+    .values({
+      id: generateId(),
+      projectId,
+      ownerId: userId,
+      token: randomBytes(32).toString('base64url'),
+      snapshotName: snapshot.name,
+      snapshot,
+    })
+    .returning({ token: projectShares.token, createdAt: projectShares.createdAt })
+
+  return shareLink(share.token, share.createdAt)
+}
+
+/** Same code and the same workspace files, ignoring chat history and names. */
+function sameDesign(a: Pick<ProjectArtifacts, 'code' | 'files'>, b: Pick<ProjectArtifacts, 'code' | 'files'>) {
+  return (
+    a.code === b.code &&
+    a.files.length === b.files.length &&
+    a.files.every((file, i) => file.name === b.files[i].name && file.data === b.files[i].data)
+  )
+}
+
+/**
+ * A link the shop can open to see exactly the design being ordered.
+ *
+ * Projects are private, so an order or a WhatsApp message needs a share
+ * snapshot to point at. An existing link is reused when it already shows the
+ * current design, so a link the owner has handed out keeps working; it is only
+ * replaced when the design has changed since, because a stale snapshot would
+ * have the shop print the wrong thing.
+ */
+export async function designLinkForOrder(
+  projectId: string,
+  userId: string,
+): Promise<ProjectShareLink | null> {
+  return db.transaction(async (tx) => {
+    const snapshot = await loadProjectSnapshot(tx, projectId, userId)
+    if (!snapshot) return null
+
+    const [existing] = await tx
+      .select({
+        token: projectShares.token,
+        createdAt: projectShares.createdAt,
+        snapshot: projectShares.snapshot,
       })
-      .returning({ token: projectShares.token, createdAt: projectShares.createdAt })
-
-    return shareLink(share.token, share.createdAt)
+      .from(projectShares)
+      .where(and(eq(projectShares.projectId, projectId), eq(projectShares.ownerId, userId)))
+    if (existing && sameDesign(existing.snapshot as ProjectSnapshot, snapshot)) {
+      return shareLink(existing.token, existing.createdAt)
+    }
+    return writeProjectShare(tx, projectId, userId, snapshot)
   })
 }
 
