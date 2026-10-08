@@ -31,6 +31,12 @@ const badgeLabels: Record<RenderState['status'], string> = {
   error: 'Error',
 }
 
+/**
+ * Phones report a device pixel ratio of 3, which is 9× the fill of a 1×
+ * screen per frame with nothing visibly gained for a solid-shaded model.
+ */
+const MAX_PIXEL_RATIO = 2
+
 export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
@@ -39,6 +45,8 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
   const meshRef = useRef<THREE.Mesh | null>(null)
   const gridRef = useRef<THREE.GridHelper | null>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
+  /** Draw the scene on the next frame (see the render loop below). */
+  const requestFrameRef = useRef<() => void>(() => {})
   const [webglError, setWebglError] = useState(false)
 
   // Set up the scene once.
@@ -50,7 +58,7 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
     // policy). Fail soft with a message instead of crashing the app.
     let renderer: THREE.WebGLRenderer
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
+      renderer = new THREE.WebGLRenderer({ antialias: true })
     } catch {
       setWebglError(true)
       return
@@ -65,7 +73,7 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
     camera.position.set(80, 60, 80)
     cameraRef.current = camera
 
-    renderer.setPixelRatio(window.devicePixelRatio)
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO))
     host.appendChild(renderer.domElement)
 
     const controls = new OrbitControls(camera, renderer.domElement)
@@ -80,13 +88,32 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
     gridRef.current = grid
     scene.add(grid)
 
+    // Render on demand rather than every frame forever. The loop runs while
+    // something is changing (a drag, damping easing out, a resize, a new
+    // mesh) and stops as soon as a frame leaves the camera where it was, so
+    // an idle preview, or one hidden behind the Code tab, costs nothing.
     let raf = 0
-    const animate = () => {
-      raf = requestAnimationFrame(animate)
-      controls.update()
+    let frameWanted = false
+    const frame = () => {
+      raf = 0
+      // Hidden hosts (the Code/Files tabs) have no size; skip until shown.
+      if (host.clientWidth === 0 || host.clientHeight === 0) {
+        frameWanted = false
+        return
+      }
+      const moving = controls.update()
       renderer.render(scene, camera)
+      frameWanted = false
+      if (moving) requestFrame()
     }
-    animate()
+    const requestFrame = () => {
+      if (frameWanted) return
+      frameWanted = true
+      raf = requestAnimationFrame(frame)
+    }
+    requestFrameRef.current = requestFrame
+    controls.addEventListener('change', requestFrame)
+    controls.addEventListener('start', requestFrame)
 
     const resize = () => {
       const w = host.clientWidth
@@ -95,14 +122,18 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
       camera.aspect = w / h
       camera.updateProjectionMatrix()
       renderer.setSize(w, h)
+      requestFrame()
     }
     resize()
     const ro = new ResizeObserver(resize)
     ro.observe(host)
 
     return () => {
-      cancelAnimationFrame(raf)
+      if (raf) cancelAnimationFrame(raf)
+      requestFrameRef.current = () => {}
       ro.disconnect()
+      controls.removeEventListener('change', requestFrame)
+      controls.removeEventListener('start', requestFrame)
       controls.dispose()
       renderer.dispose()
       rendererRef.current = null
@@ -145,7 +176,10 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
     }
 
     const renderer = rendererRef.current
-    if (renderer && onThumbnailReady) {
+    if (renderer && onThumbnailReady && renderer.domElement.width > 0) {
+      // Draw and read back in the same task: the WebGL buffer is only
+      // guaranteed to hold the frame until the browser composites it, which
+      // is what let us drop preserveDrawingBuffer (and its per-frame copy).
       renderer.render(scene, camera)
       const source = renderer.domElement
       const canvas = document.createElement('canvas')
@@ -164,6 +198,7 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
         onThumbnailReady(null)
       }
     }
+    requestFrameRef.current()
   }, [render.mesh, onThumbnailReady])
 
   return (
