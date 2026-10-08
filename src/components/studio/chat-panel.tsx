@@ -166,7 +166,7 @@ export function ChatPanel({
             <ConversationEmptyState
               icon={<BoxIcon className="size-8" />}
               title="Describe what you want to build"
-              description='The AI writes the OpenSCAD code and it renders live on the right. Try "a hexagonal phone stand", or attach photos or sketches of a part to recreate.'
+              description='The AI writes the OpenSCAD code and it renders live in the preview. Try "a hexagonal phone stand", or attach photos or sketches of a part to recreate.'
             />
           )}
           {messages.map((message) => (

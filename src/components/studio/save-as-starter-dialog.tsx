@@ -109,10 +109,11 @@ export function SaveAsStarterDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
-        <BookmarkPlusIcon className="size-3.5" /> Save as canonical
+      <Button variant="ghost" size="sm" onClick={() => setOpen(true)} aria-label="Save as canonical">
+        <BookmarkPlusIcon className="size-3.5" />
+        <span className="max-sm:hidden">Save as canonical</span>
       </Button>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Save a canonical design</DialogTitle>
           <DialogDescription>

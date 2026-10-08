@@ -27,6 +27,9 @@ interface Props {
   onFork: (id: string) => void
   onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
+  /** Below `md` the sidebar is an off-canvas drawer; this controls it. */
+  mobileOpen: boolean
+  onMobileClose: () => void
 }
 
 export function Sidebar({
@@ -39,6 +42,8 @@ export function Sidebar({
   onFork,
   onRename,
   onDelete,
+  mobileOpen,
+  onMobileClose,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [query, setQuery] = useState('')
@@ -80,12 +85,17 @@ export function Sidebar({
     )
     .sort((a, b) => b.updatedAt - a.updatedAt)
 
+  // The collapse toggle only exists from `md` up, so the mobile drawer is never collapsed.
   return (
     <aside
       className={cn(
-        'flex shrink-0 flex-col border-r bg-sidebar transition-[width] duration-200 motion-reduce:transition-none',
-        collapsed ? 'w-14' : 'w-64',
+        'flex shrink-0 flex-col border-r bg-sidebar',
+        'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:w-72 max-md:max-w-[85vw] max-md:shadow-2xl max-md:transition-transform max-md:duration-200',
+        'md:transition-[width] md:duration-200 motion-reduce:transition-none',
+        mobileOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full',
+        collapsed ? 'md:w-14' : 'md:w-64',
       )}
+      aria-label="Designs"
     >
       <div
         className={cn(
@@ -120,6 +130,16 @@ export function Sidebar({
         <Button
           variant="ghost"
           size="icon-sm"
+          className="md:hidden"
+          onClick={onMobileClose}
+          aria-label="Close sidebar"
+        >
+          <XIcon className="size-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="max-md:hidden"
           onClick={() => setCollapsed((value) => !value)}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -163,7 +183,7 @@ export function Sidebar({
                 }}
                 placeholder="Search names, code, chats"
                 aria-label="Search designs"
-                className="h-7 pl-7 pr-7 text-xs md:text-xs"
+                className="h-9 pl-7 pr-7 md:h-7 md:text-xs"
               />
               {query && (
                 <button
@@ -199,8 +219,9 @@ export function Sidebar({
                     {p.messageCount} msg
                   </div>
                 </div>
+                {/* Hover reveals the actions; touch screens have no hover, so show them always. */}
                 <div
-                  className="hidden shrink-0 items-center group-hover:flex"
+                  className="hidden shrink-0 items-center group-hover:flex pointer-coarse:flex"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <Button variant="ghost" size="icon-sm" title="Fork" onClick={() => onFork(p.id)}>

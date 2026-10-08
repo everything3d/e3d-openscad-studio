@@ -223,10 +223,10 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
           3D preview unavailable: this browser does not support WebGL.
         </div>
       )}
-      <div className="absolute right-3 top-3 flex items-center gap-2">
+      <div className="pointer-events-none absolute inset-x-2 top-2 flex flex-wrap items-center justify-end gap-1.5 md:inset-x-3 md:top-3 md:gap-2 [&>*]:pointer-events-auto">
         {onOrder && (
           <Button size="sm" disabled={!render.mesh} onClick={onOrder} title="Order this print">
-            Order this print
+            Order<span className="max-sm:hidden"> this print</span>
           </Button>
         )}
         <Button
@@ -258,7 +258,7 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
         </span>
       </div>
       {render.status === 'error' && render.error && (
-        <div className="absolute inset-x-0 bottom-0 max-h-40 overflow-auto border-t border-destructive/30 bg-background/90 p-3 backdrop-blur">
+        <div className="absolute inset-x-0 bottom-0 max-h-[40%] overflow-auto md:max-h-40 border-t border-destructive/30 bg-background/90 p-3 backdrop-blur">
           <pre className="whitespace-pre-wrap font-mono text-xs text-destructive">
             {render.error}
           </pre>
