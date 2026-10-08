@@ -5,9 +5,7 @@ export const THREE_LAYER_NAME_PIGGY_BANK_SCAD = String.raw`
 // built from three printed colours: the plate, a darker outline layer, and a
 // lighter letter face that sits on the outline for a raised two-tone look.
 //
-// mode = "print" lays every part out flat, ready to slice.
-// mode = "preview" shows the name lid upright, as it looks on the shelf.
-mode = "print";  // [preview, print]
+// Every part is laid out flat and face up, ready to slice.
 name = "Aarav";
 font = "Spicy Sale"; // font
 textSize = 40;
@@ -292,35 +290,17 @@ translate([0, text_height + coinLidHoleDiameter + 10, 0]) {
     coin_lid();
 }
 
-if (mode != "preview") {
-    translate([x_translation, y_translation/2, lidStep + nameLayerHeight]) {
-        rotate([180, 0, 0]) {
-            difference() {
-                extruded_text(lidStep, offsetValue);
-                translate([0, 0, 0]) {
-                    extruded_text(lidStep, offsetValue - offsetDecrease / 2 + 0.05);
-                }
-            }
-            translate([0.01 /2, 0, lidStep]) {
-                offset_text_piece();
-                translate([0, 0, 0.02]) {
-                    text_with_color();
-                }
-            }
+// Name lid, printed face up so the raised name is on top.
+translate([x_translation, y_translation, 0]) {
+    difference() {
+        extruded_text(lidStep, offsetValue);
+        translate([0, 0, 0]) {
+            extruded_text(lidStep, offsetValue - offsetDecrease / 2 + 0.05);
         }
     }
-} else {
-    translate([x_translation, y_translation, 0]) {
-        difference() {
-            extruded_text(lidStep, offsetValue);
-            translate([0, 0, 0]) {
-                extruded_text(lidStep, offsetValue - offsetDecrease / 2 + 0.05);
-            }
-        }
-        translate([0, 0, lidStep]) {
-            offset_text_piece();
-            text_with_color();
-        }
+    translate([0, 0, lidStep]) {
+        offset_text_piece();
+        text_with_color();
     }
 }
 `
