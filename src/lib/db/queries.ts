@@ -410,6 +410,30 @@ export async function forkProject(sourceId: string, userId: string): Promise<Ful
 type CanonicalDesignRecord = typeof canonicalDesigns.$inferSelect
 type CanonicalVersionRecord = typeof canonicalVersions.$inferSelect
 
+/**
+ * What the client gets as a canonical's thumbnail. Built-ins reference a
+ * static image by path. Published designs store a data URL of up to 300 KB;
+ * handing that to the browser as a URL to /api/canonicals/[id]/thumbnail
+ * keeps it out of the page HTML and the RSC payload (once per design, twice
+ * per load) and lets the browser cache it. The version id in the query
+ * changes the URL whenever the design is republished.
+ */
+function thumbnailUrl(design: CanonicalDesignRecord, thumbnail: string | null): string | null {
+  if (!thumbnail) return null
+  if (!thumbnail.startsWith('data:')) return thumbnail
+  return `/api/canonicals/${encodeURIComponent(design.id)}/thumbnail?v=${encodeURIComponent(design.currentVersionId)}`
+}
+
+/** The raw stored thumbnail (a data URL for published designs) of a live canonical's current version. */
+export async function getCanonicalThumbnail(id: string): Promise<string | null> {
+  const [row] = await db
+    .select({ thumbnail: canonicalVersions.thumbnail })
+    .from(canonicalDesigns)
+    .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
+    .where(and(eq(canonicalDesigns.id, id), isNull(canonicalDesigns.archivedAt)))
+  return row?.thumbnail ?? null
+}
+
 function toCanonicalSummary(
   design: CanonicalDesignRecord,
   version: Pick<CanonicalVersionRecord, 'versionNumber' | 'thumbnail'> & { fileCount: number },
@@ -422,7 +446,7 @@ function toCanonicalSummary(
     category: design.category,
     currentVersionId: design.currentVersionId,
     versionNumber: version.versionNumber,
-    thumbnail: version.thumbnail,
+    thumbnail: thumbnailUrl(design, version.thumbnail),
     fileCount: version.fileCount,
     isOwner: design.ownerId === userId,
     updatedAt: design.updatedAt.getTime(),
@@ -621,7 +645,12 @@ export async function listCanonicals(userId: string): Promise<CanonicalSummary[]
       design: canonicalDesigns,
       version: {
         versionNumber: canonicalVersions.versionNumber,
-        thumbnail: canonicalVersions.thumbnail,
+        // A published thumbnail is a data URL of up to 300 KB that the
+        // summary only turns into a route URL (see thumbnailUrl), so fetch
+        // just enough of it to tell a data URL from a static path.
+        thumbnail: sql<string | null>`case
+          when ${canonicalVersions.thumbnail} like 'data:%' then 'data:'
+          else ${canonicalVersions.thumbnail} end`,
         fileCount: sql<number>`jsonb_array_length(${canonicalVersions.files})`.mapWith(Number),
       },
     })
