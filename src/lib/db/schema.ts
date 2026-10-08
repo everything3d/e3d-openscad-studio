@@ -80,17 +80,24 @@ export const canonicalVersions = pgTable(
  * Chat messages, stored in the AI SDK UIMessage shape (`parts` is the
  * UIMessage parts array). `seq` orders messages within a project.
  */
-export const messages = pgTable('messages', {
-  seq: bigserial('seq', { mode: 'number' }).primaryKey(),
-  id: text('id').notNull(),
-  projectId: text('project_id')
-    .notNull()
-    .references(() => projects.id, { onDelete: 'cascade' }),
-  role: text('role').notNull(),
-  parts: jsonb('parts').notNull(),
-  metadata: jsonb('metadata'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+export const messages = pgTable(
+  'messages',
+  {
+    seq: bigserial('seq', { mode: 'number' }).primaryKey(),
+    id: text('id').notNull(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    role: text('role').notNull(),
+    parts: jsonb('parts').notNull(),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  // Every read and write of a conversation is by project, in seq order: the
+  // sidebar's message counts, opening a workspace, and persisting each turn.
+  // Without this index each of those scanned the whole table.
+  (t) => [index('messages_project_seq_idx').on(t.projectId, t.seq)],
+)
 
 /**
  * Files available to `import()` / `use <>` during rendering (SVG, DXF, STL,
