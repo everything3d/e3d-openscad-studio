@@ -16,7 +16,11 @@ const publicFile = (path: string) => readFileSync(new URL(`../../public/${path}`
 const wasmBinary = publicFile('openscad/openscad.wasm')
 const fonts = unzipSync(new Uint8Array(publicFile('openscad/fonts.zip')))
 
-async function render(code: string, defines: Record<string, string | boolean> = {}) {
+async function render(
+  code: string,
+  defines: Record<string, string | boolean> = {},
+  files: readonly { name: string; text: string }[] = [],
+) {
   const log: string[] = []
   const instance = await OpenSCAD({
     noInitialRun: true,
@@ -31,6 +35,8 @@ async function render(code: string, defines: Record<string, string | boolean> = 
   })
   instance.FS.mkdir('/fonts')
   for (const [name, data] of Object.entries(fonts)) instance.FS.writeFile(`/fonts/${name}`, data)
+  // Workspace files sit beside the input, as in the render worker.
+  for (const file of files) instance.FS.writeFile(`/${file.name}`, file.text)
   instance.FS.writeFile('/input.scad', code)
   const [input, ...rest] = openscadArgs('off')
   const overrides = Object.entries(defines).flatMap(([key, value]) => ['-D', `${key}=${JSON.stringify(value)}`])
@@ -54,6 +60,10 @@ const VARIANTS: Record<string, Record<string, string | boolean>[]> = {
   'builtin-figurine-display-base': [{ show_assembled: true, two_sided: true }],
   'builtin-award-plaque-base': [{ show_assembled: true }, { line3: '' }],
   'builtin-two-name-illusion': [{ frontName: 'ANNA', sideName: 'LEO' }],
+  'builtin-letter-pen-stand': [
+    { name_text: 'Mia Rose', export_part: 'name' },
+    { name_text: 'Kevin', big_letter: 'J', export_part: 'stand' },
+  ],
 }
 
 describe('built-in starters render in the studio', () => {
@@ -61,7 +71,7 @@ describe('built-in starters render in the studio', () => {
     for (const defines of [{}, ...(VARIANTS[starter.id] ?? [])]) {
       const label = Object.keys(defines).length ? JSON.stringify(defines) : 'defaults'
       it(`${starter.id} with ${label}`, { timeout: 60_000 }, async () => {
-        const { output, problems } = await render(starter.code, defines)
+        const { output, problems } = await render(starter.code, defines, starter.files)
         expect(problems).toEqual([])
         expect(output?.byteLength ?? 0).toBeGreaterThan(1_000)
       })

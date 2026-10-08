@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto'
 import { AWARD_PLAQUE_BASE_SCAD, FIGURINE_DISPLAY_BASE_SCAD } from './builtin-scad/display-base'
 import { DESK_NAMEPLATE_SCAD } from './builtin-scad/desk-nameplate'
+import { LETTER_PEN_STAND_SCAD } from './builtin-scad/letter-pen-stand'
+import { LETTER_STANDS_LIBRARY_SCAD } from './builtin-scad/letter-stands-library'
 import { NAME_KEYCHAIN_SCAD } from './builtin-scad/name-keychain'
+import { PACIFICO_OUTLINES_SCAD } from './builtin-scad/pacifico-outlines'
 import { THREE_LAYER_NAME_PIGGY_BANK_SCAD } from './builtin-scad/three-layer-name-piggy-bank'
 import { TWO_LAYER_NAME_PIGGY_BANK_SCAD } from './builtin-scad/two-layer-name-piggy-bank'
 import { TWO_NAME_ILLUSION_SCAD } from './builtin-scad/two-name-illusion'
+import type { WorkspaceFile } from './types'
 
 export const SYSTEM_CANONICAL_OWNER_ID = 'system:e3d'
 
@@ -16,6 +20,12 @@ export interface BuiltInCanonical {
   code: string
   modificationGuide: string
   thumbnail: string
+  /**
+   * Text workspace files the program pulls in with `use <name>`. Bulky
+   * geometry data belongs here rather than in `code`: the agent reads and
+   * rewrites the whole program on every change, but only sees file names.
+   */
+  files?: readonly { name: string; text: string }[]
   /**
    * Earlier ids for this same design, retired by a rename or a merge. A
    * database seeded before the change still holds those rows, so the seeder
@@ -33,14 +43,26 @@ export interface BuiltInCanonical {
  * edit would then never reach a database that was already seeded.
  */
 export function builtInVersionId(starter: BuiltInCanonical): string {
-  const digest = createHash('sha256')
+  const hash = createHash('sha256')
     .update(starter.code)
     .update('\0')
     .update(starter.modificationGuide)
     .update('\0')
     .update(starter.thumbnail)
-    .digest('hex')
+  for (const file of starter.files ?? []) hash.update('\0').update(file.name).update('\0').update(file.text)
+  const digest = hash.digest('hex')
   return `${starter.id}-${digest.slice(0, 12)}`
+}
+
+/**
+ * A starter's workspace files as stored on its version row. `addedAt` is the
+ * file's index, which keeps workspaces listing them in the declared order.
+ */
+export function builtInWorkspaceFiles(starter: BuiltInCanonical): WorkspaceFile[] {
+  return (starter.files ?? []).map((file, index) => {
+    const data = Buffer.from(file.text, 'utf8')
+    return { name: file.name, data: data.toString('base64'), size: data.byteLength, addedAt: index }
+  })
 }
 
 const PRINT_FIT_GUIDANCE = `- Change parts one at a time and re-render; the studio shows OpenSCAD warnings and errors.
@@ -215,6 +237,33 @@ Gotchas:
 - Lowercase letters with dots or ascenders (i, j, h) leave stray pieces. Use uppercase.
 - Keep the small overlap between the sculpture and base so the exported mesh stays connected.`,
     thumbnail: '/canonicals/two-name-illusion.webp',
+  },
+  {
+    id: 'builtin-letter-pen-stand',
+    title: 'Letter pen stand with cursive name',
+    description:
+      'A serif initial that stands upright and holds pens in a pocket behind it, plus a separate one-piece cursive name to set in front.',
+    category: 'Desk & display',
+    code: LETTER_PEN_STAND_SCAD,
+    files: [
+      { name: 'letter-stands.scad', text: LETTER_STANDS_LIBRARY_SCAD },
+      { name: 'pacifico-outlines.scad', text: PACIFICO_OUTLINES_SCAD },
+    ],
+    modificationGuide: `Two separate solids: an upright letter stand (from letter-stands.scad) and a flat cursive name (from the Pacifico outlines in pacifico-outlines.scad). Both library files are workspace files; edit the main program, not them.
+
+Common changes:
+- Change name_text first. big_letter = "auto" uses the name's first letter for the stand.
+- Stands exist only for A B C D G H J L M N P R S T U V Z. For a name starting with any other letter (E, F, I, K, O, Q, W, X, Y), set big_letter to one of those or the render stops with "Unsupported letter". Do not try to draw a new stand letter unless the user asks for one.
+- export_part: "both" lays out the stand and name side by side; "stand" or "name" exports one part.
+- stand_height_mm scales the whole stand and its pocket uniformly.
+- name_width_mm sets the name's overall width; its height follows the handwriting proportions. name_thickness_mm is the extrusion height.
+- name_bridge_width_mm and name_stroke_expansion_mm strengthen delicate joins. Raise them slightly for small names.
+
+Gotchas:
+- The name uses the embedded Pacifico outlines, not text(), so the bridges can join every separate piece (i/j dots, unjoined capitals, word gaps) into one solid. Keep cursive_name() on the outlines; switching to text() leaves loose pieces.
+- Only basic Latin (ASCII) characters are in the outlines; accented letters stop the render.
+- The stand prints upright on its base; the name prints flat at Z=0.`,
+    thumbnail: '/canonicals/letter-pen-stand.webp',
   },
 ] as const
 
