@@ -92,6 +92,7 @@ export function useRenderer() {
       if (msg.type === 'ready') return
       inFlight.current.delete(msg.id)
       armWatchdog()
+      if (msg.type === 'cancelled') return
 
       if (msg.type === 'export') {
         const p = pending.current.get(msg.id)
@@ -117,6 +118,7 @@ export function useRenderer() {
     }
 
     worker.onerror = (e) => {
+      disposeWorker(e.message || 'Worker crashed')
       setState((s) => ({
         status: 'error',
         mesh: s.mesh,
@@ -125,7 +127,7 @@ export function useRenderer() {
       }))
     }
     return worker
-  }, [armWatchdog])
+  }, [armWatchdog, disposeWorker])
 
   useEffect(() => () => disposeWorker('Worker terminated'), [disposeWorker])
 

@@ -13,12 +13,13 @@ type Params = { params: Promise<{ id: string }> }
  * `v` query carries the version id, so a republished design gets a new URL
  * and the long cache lifetime below is safe.
  */
-export async function GET(_req: Request, { params }: Params) {
+export async function GET(req: Request, { params }: Params) {
   const { userId } = await auth()
   if (!userId) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
-  const thumbnail = await getCanonicalThumbnail(id)
+  const versionId = new URL(req.url).searchParams.get('v')
+  const thumbnail = await getCanonicalThumbnail(id, versionId)
   if (!thumbnail) return new Response(null, { status: 404 })
 
   const match = thumbnail.match(/^data:(image\/(?:jpeg|webp|png));base64,(.+)$/)
@@ -27,7 +28,7 @@ export async function GET(_req: Request, { params }: Params) {
   return new Response(Buffer.from(match[2], 'base64'), {
     headers: {
       'Content-Type': match[1],
-      'Cache-Control': 'private, max-age=31536000, immutable',
+      'Cache-Control': versionId ? 'private, max-age=31536000, immutable' : 'private, no-cache',
     },
   })
 }

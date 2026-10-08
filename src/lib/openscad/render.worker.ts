@@ -159,6 +159,7 @@ export type WorkerRequest =
 /** Messages to the main thread. */
 export type WorkerResponse =
   | { type: 'ready' }
+  | { type: 'cancelled'; id: number }
   | { type: 'render'; id: number; ok: true; mesh: ParsedMesh; log: string }
   | { type: 'render'; id: number; ok: false; error: string; log: string }
   | { type: 'export'; id: number; ok: true; data: ArrayBuffer; format: ExportFormat; log: string }
@@ -341,7 +342,10 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
   }
   if (msg.type === 'render') {
     for (let i = queue.length - 1; i >= 0; i--) {
-      if (queue[i].type === 'render') queue.splice(i, 1)
+      if (queue[i].type === 'render') {
+        const [cancelled] = queue.splice(i, 1)
+        post({ type: 'cancelled', id: cancelled.id })
+      }
     }
   }
   queue.push(msg)

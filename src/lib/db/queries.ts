@@ -425,11 +425,17 @@ function thumbnailUrl(design: CanonicalDesignRecord, thumbnail: string | null): 
 }
 
 /** The raw stored thumbnail (a data URL for published designs) of a live canonical's current version. */
-export async function getCanonicalThumbnail(id: string): Promise<string | null> {
+export async function getCanonicalThumbnail(id: string, versionId: string | null): Promise<string | null> {
   const [row] = await db
     .select({ thumbnail: canonicalVersions.thumbnail })
     .from(canonicalDesigns)
-    .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
+    .innerJoin(
+      canonicalVersions,
+      and(
+        eq(canonicalVersions.canonicalDesignId, canonicalDesigns.id),
+        eq(canonicalVersions.id, versionId ?? canonicalDesigns.currentVersionId),
+      ),
+    )
     .where(and(eq(canonicalDesigns.id, id), isNull(canonicalDesigns.archivedAt)))
   return row?.thumbnail ?? null
 }
@@ -1105,6 +1111,15 @@ export async function saveChat({
   code: string | null
 }): Promise<void> {
   await db.transaction(async (tx) => {
+    // Serialize saves for the same workspace so overlapping chat requests
+    // cannot both observe the same prefix and insert duplicate messages.
+    const [project] = await tx
+      .select({ name: projects.name })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .for('update')
+    if (!project) return
+
     // A turn normally only appends (the user's message and the assistant's
     // reply), so insert what is new rather than rewriting the whole history:
     // that rewrite grew with every turn and copied every image attachment
@@ -1145,11 +1160,7 @@ export async function saveChat({
       .find((m) => m.role === 'user')
       ?.parts.find((p) => p.type === 'text')
     if (firstUserText && 'text' in firstUserText) {
-      const [project] = await tx
-        .select({ name: projects.name })
-        .from(projects)
-        .where(eq(projects.id, projectId))
-      if (project?.name === PLACEHOLDER_PROJECT_NAME) {
+      if (project.name === PLACEHOLDER_PROJECT_NAME) {
         patch.name = firstUserText.text.slice(0, 40)
       }
     }
