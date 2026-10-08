@@ -7,7 +7,7 @@ import { DownloadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { RenderState } from '@/lib/openscad/useRenderer'
-import { DEFAULT_FACE_COLOR, type ParsedMesh } from '@/lib/openscad/off'
+import { addLights, createModelMesh, PREVIEW_BACKGROUND } from './scene'
 
 interface Props {
   render: RenderState
@@ -15,38 +15,6 @@ interface Props {
   /** Opens the order dialog; omitted where ordering does not apply. */
   onOrder?: () => void
   onThumbnailReady?: (thumbnail: string | null) => void
-}
-
-/**
- * Expand the indexed mesh into non-indexed position + color attributes so
- * each face can carry its own flat `color()` value.
- */
-function meshToGeometry(mesh: ParsedMesh): THREE.BufferGeometry {
-  const triCount = mesh.triangles.length / 3
-  const positions = new Float32Array(triCount * 9)
-  const colors = new Float32Array(triCount * 9)
-
-  for (let t = 0; t < triCount; t++) {
-    const [dr, dg, db] = DEFAULT_FACE_COLOR
-    const r = (mesh.faceColors ? mesh.faceColors[t * 3] : dr) / 255
-    const g = (mesh.faceColors ? mesh.faceColors[t * 3 + 1] : dg) / 255
-    const b = (mesh.faceColors ? mesh.faceColors[t * 3 + 2] : db) / 255
-    for (let k = 0; k < 3; k++) {
-      const vi = mesh.triangles[t * 3 + k]
-      const o = t * 9 + k * 3
-      positions[o] = mesh.vertices[vi * 3]
-      positions[o + 1] = mesh.vertices[vi * 3 + 1]
-      positions[o + 2] = mesh.vertices[vi * 3 + 2]
-      colors[o] = r
-      colors[o + 1] = g
-      colors[o + 2] = b
-    }
-  }
-
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-  return geometry
 }
 
 const badgeStyles: Record<RenderState['status'], string> = {
@@ -89,7 +57,7 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
     }
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#0f1115')
+    scene.background = new THREE.Color(PREVIEW_BACKGROUND)
     sceneRef.current = scene
     rendererRef.current = renderer
 
@@ -104,13 +72,7 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
     controls.enableDamping = true
     controlsRef.current = controls
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55))
-    const key = new THREE.DirectionalLight(0xffffff, 1.1)
-    key.position.set(1, 1.4, 0.8)
-    scene.add(key)
-    const fill = new THREE.DirectionalLight(0x88aaff, 0.4)
-    fill.position.set(-1, -0.3, -0.6)
-    scene.add(fill)
+    addLights(scene)
 
     const grid = new THREE.GridHelper(200, 20, 0x334155, 0x1e2633)
     ;(grid.material as THREE.Material).transparent = true
@@ -155,25 +117,14 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
     const controls = controlsRef.current
     if (!scene || !camera || !controls || !render.mesh) return
 
-    const geometry = meshToGeometry(render.mesh)
-    geometry.computeVertexNormals()
-    geometry.center()
-
     if (meshRef.current) {
       scene.remove(meshRef.current)
       meshRef.current.geometry.dispose()
       ;(meshRef.current.material as THREE.Material).dispose()
     }
 
-    const material = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      metalness: 0.1,
-      roughness: 0.55,
-      flatShading: false,
-    })
-    const mesh = new THREE.Mesh(geometry, material)
-    // OpenSCAD is Z-up; three is Y-up. Rotate so models stand correctly.
-    mesh.rotation.x = -Math.PI / 2
+    const mesh = createModelMesh(render.mesh)
+    const geometry = mesh.geometry
     scene.add(mesh)
     meshRef.current = mesh
 
@@ -202,7 +153,7 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
       canvas.height = 400
       const context = canvas.getContext('2d')
       if (context) {
-        context.fillStyle = '#0f1115'
+        context.fillStyle = PREVIEW_BACKGROUND
         context.fillRect(0, 0, canvas.width, canvas.height)
         const scale = Math.min(canvas.width / source.width, canvas.height / source.height)
         const width = source.width * scale
