@@ -67,7 +67,7 @@ Common changes:
 - Adjust nameXScale to fit long names without making the letters shorter. Keep every piece of name geometry routed through name_text() so the plate, outline and face stay aligned.
 - boxColor, fontColor2 and fontColor are the three printable color regions (body, outline, letter face).
 - backText engraves a short message, such as "Love, Mom", into the underside.
-- mode = "preview" shows the name lid upright; mode = "print" lays every part flat for slicing.
+- Every part is laid out flat for slicing, with the name lid face up (raised name on top). Keep it face up — printing it upside down ruins the name.
 ${PRINT_FIT_GUIDANCE}
 
 Gotchas:
@@ -91,7 +91,7 @@ Common changes:
 - Change "name" first. For names of four letters or fewer, raise letterSpacing toward 1.2 so the bank stays a practical size.
 - boxColor and fontColor are the two printable color regions.
 - textSize scales the whole bank; extrudeHeight sets its height.
-- mode = "preview" shows the name lid upright; mode = "print" lays every part flat for slicing.
+- Every part is laid out flat for slicing, with the name lid face up (raised name on top). Keep it face up — printing it upside down ruins the name.
 ${PRINT_FIT_GUIDANCE}
 
 Gotchas:
