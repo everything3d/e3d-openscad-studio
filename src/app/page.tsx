@@ -197,13 +197,13 @@ export default async function LandingPage() {
                 You type
               </span>
               <span className="text-sm text-neutral-300">
-                “a piggy bank that spells VEERA — mint body, bubbly pink
+                “a piggy bank that spells AARAV — mint body, bubbly pink
                 letters, and a slot big enough for coins”
               </span>
             </figcaption>
             <Image
               src="/canonicals/three-layer-name-piggy-bank.webp"
-              alt="A mint-green piggy bank spelling VEERA, with its name-plate lid beside it in pink and magenta"
+              alt="A mint-green piggy bank spelling AARAV, with its name-plate lid beside it in pink and magenta"
               width={1200}
               height={800}
               priority
