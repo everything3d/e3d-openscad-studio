@@ -117,13 +117,13 @@ export function StarterLibrary({
 
   return (
     <div className="h-full overflow-y-auto bg-[#0f1115] text-[#f4f5f7]">
-      <div className="mx-auto max-w-6xl px-6 py-10 lg:px-10 lg:py-14">
-        <div className="flex flex-col justify-between gap-6 border-b border-white/10 pb-8 md:flex-row md:items-end">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10 lg:px-10 lg:py-14">
+        <div className="flex flex-col justify-between gap-5 border-b border-white/10 pb-6 sm:gap-6 sm:pb-8 md:flex-row md:items-end">
           <div>
             <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.24em] text-[#6e9bff]">
               Canonical design library
             </div>
-            <h1 className="max-w-2xl text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h1 className="max-w-2xl text-2xl font-semibold tracking-tight sm:text-4xl">
               Start from a canonical design.
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-white/55">
@@ -148,9 +148,9 @@ export function StarterLibrary({
             <button
               onClick={() => void blank()}
               disabled={creatingBlank}
-              className="group min-h-72 overflow-hidden rounded-xl border border-dashed border-white/20 bg-white/[0.025] text-left transition hover:border-[#6e9bff]/60 hover:bg-[#6e9bff]/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6e9bff]"
+              className="group overflow-hidden sm:min-h-72 rounded-xl border border-dashed border-white/20 bg-white/[0.025] text-left transition hover:border-[#6e9bff]/60 hover:bg-[#6e9bff]/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6e9bff]"
             >
-              <div className="flex h-44 items-center justify-center border-b border-white/10">
+              <div className="flex h-28 items-center justify-center border-b border-white/10 sm:h-44">
                 <div className="flex size-16 items-center justify-center rounded-full border border-white/15 bg-black/20 transition group-hover:scale-105 motion-reduce:transform-none">
                   <SparklesIcon className="size-6 text-[#6e9bff]" />
                 </div>
@@ -237,8 +237,8 @@ export function StarterLibrary({
 
       <Dialog open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)}>
         {detail && (
-          <DialogContent className="max-h-[88vh] overflow-y-auto border border-white/10 bg-[#171a20] sm:max-w-2xl">
-            <div className="-mx-4 -mt-4 h-64 overflow-hidden border-b border-white/10">
+          <DialogContent className="max-h-[88dvh] overflow-y-auto border border-white/10 bg-[#171a20] sm:max-w-2xl">
+            <div className="-mx-4 -mt-4 h-48 shrink-0 overflow-hidden border-b border-white/10 sm:h-64">
               <StarterArtwork starter={detail} />
             </div>
             <DialogHeader>

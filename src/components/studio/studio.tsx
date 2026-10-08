@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { UserButton } from '@clerk/nextjs'
+import { Maximize2Icon, MenuIcon, Minimize2Icon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import { useRenderer } from '@/lib/openscad/useRenderer'
 import { meshTo3MF } from '@/lib/openscad/threemf'
 import {
@@ -46,6 +48,9 @@ export function Studio({
   const [rightTab, setRightTab] = useState<RightTab>('preview')
   const [thumbnail, setThumbnail] = useState<string | null>(null)
   const [orderOpen, setOrderOpen] = useState(false)
+  /** Phone layout only: the sidebar drawer, and whether the preview hides the chat. */
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [workspaceExpanded, setWorkspaceExpanded] = useState(false)
 
   const { state: renderState, render, reset: resetRenderer, exportModel } = useRenderer()
 
@@ -68,6 +73,7 @@ export function Studio({
 
   const selectProject = useCallback((id: string | null) => {
     setActiveId(id)
+    setDrawerOpen(false)
     window.history.replaceState({}, '', id ? `/studio?project=${encodeURIComponent(id)}` : '/studio')
   }, [])
 
@@ -86,6 +92,15 @@ export function Studio({
     setProject((p) => (p && p.id === id ? { ...p, name } : p))
     setProjects((list) => list.map((p) => (p.id === id ? { ...p, name } : p)))
   }, [])
+
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDrawerOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [drawerOpen])
 
   // ---- open the requested workspace; null is the persistent starter home ---
   useEffect(() => {
@@ -259,33 +274,54 @@ export function Studio({
         onFork={(id) => void handleFork(id)}
         onRename={(id, name) => void handleRename(id, name)}
         onDelete={(id) => void handleDelete(id)}
+        mobileOpen={drawerOpen}
+        onMobileClose={() => setDrawerOpen(false)}
       />
+      {drawerOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          aria-hidden
+          onClick={() => setDrawerOpen(false)}
+        />
+      )}
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-          <div className="truncate text-sm font-medium">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b px-2 md:px-4">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="md:hidden"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open designs"
+            aria-expanded={drawerOpen}
+          >
+            <MenuIcon className="size-4" />
+          </Button>
+          <div className="min-w-0 truncate text-sm font-medium">
             {project ? project.name : activeId ? 'Loading…' : 'Canonical designs'}
           </div>
           {project?.forkedFrom && (
-            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground max-sm:hidden">
               forked
             </span>
           )}
           {project?.canonicalTitle && (
-            <span className="rounded bg-[#6e9bff]/10 px-1.5 py-0.5 font-mono text-[10px] uppercase text-[#8eb0ff]">
+            <span className="shrink-0 rounded bg-[#6e9bff]/10 px-1.5 py-0.5 font-mono text-[10px] uppercase text-[#8eb0ff] max-md:hidden">
               {project.canonicalTitle}
               {project.canonicalVersionNumber ? ` · v${project.canonicalVersionNumber}` : ''}
             </span>
           )}
           {project?.canonicalHasNewerVersion && (
             <button
-              className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300 hover:bg-amber-500/20"
+              className="shrink-0 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300 hover:bg-amber-500/20"
               onClick={() => selectProject(null)}
+              title="Newer canonical available"
             >
-              Newer canonical available
+              <span className="sm:hidden">Update</span>
+              <span className="max-sm:hidden">Newer canonical available</span>
             </button>
           )}
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex shrink-0 items-center gap-1">
             {project && (
               <SaveAsStarterDialog
                 project={project}
@@ -315,8 +351,14 @@ export function Studio({
             />
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1">
-          <section className="flex w-[26rem] shrink-0 flex-col border-r">
+          // Phones stack the 3D workspace above the chat; from `md` they sit side by side.
+          <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+          <section
+            className={cn(
+              'order-2 flex min-h-0 flex-1 flex-col border-t md:order-1 md:w-[26rem] md:flex-none md:shrink-0 md:border-r md:border-t-0',
+              workspaceExpanded && 'max-md:hidden',
+            )}
+          >
             {project ? (
               <ChatPanel
                 key={project.id}
@@ -338,8 +380,13 @@ export function Studio({
             )}
           </section>
 
-          <section className="flex min-w-0 flex-1 flex-col">
-            <div className="flex shrink-0 gap-1 border-b px-3 py-2">
+          <section
+            className={cn(
+              'order-1 flex min-w-0 shrink-0 flex-col md:order-2 md:h-auto md:flex-1',
+              workspaceExpanded ? 'max-md:flex-1' : 'h-[45%]',
+            )}
+          >
+            <div className="flex shrink-0 items-center gap-1 border-b px-2 py-1.5 md:px-3 md:py-2">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -354,6 +401,16 @@ export function Studio({
                   {tab.label}
                 </button>
               ))}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="ml-auto md:hidden"
+                onClick={() => setWorkspaceExpanded((value) => !value)}
+                aria-label={workspaceExpanded ? 'Show chat' : 'Expand to full screen'}
+                aria-pressed={workspaceExpanded}
+              >
+                {workspaceExpanded ? <Minimize2Icon /> : <Maximize2Icon />}
+              </Button>
             </div>
             <div className="relative min-h-0 flex-1">
               <div className={cn('absolute inset-0', rightTab !== 'preview' && 'hidden')}>
