@@ -52,7 +52,7 @@ export function Studio({
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [workspaceExpanded, setWorkspaceExpanded] = useState(false)
 
-  const { state: renderState, render, reset: resetRenderer, exportModel } = useRenderer()
+  const { state: renderState, render, reset: resetRenderer, exportModel, warmup } = useRenderer()
 
   // ---- server helpers ------------------------------------------------------
   const refreshList = useCallback(async () => {
@@ -107,11 +107,14 @@ export function Studio({
     setThumbnail(null)
     resetRenderer()
     if (activeId) {
+      // Start fetching the wasm and fonts now, in parallel with the project
+      // itself, instead of after it arrives and the first render is requested.
+      warmup()
       void openProject(activeId)
       return
     }
     setProject(null)
-  }, [activeId, openProject, resetRenderer])
+  }, [activeId, openProject, resetRenderer, warmup])
 
   // Never reuse a preview after its source starts rendering or fails. The next
   // successful mesh supplies a fresh thumbnail for the active workspace.

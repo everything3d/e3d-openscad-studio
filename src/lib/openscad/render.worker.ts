@@ -6,6 +6,7 @@
 import { unzipSync } from 'fflate'
 import OpenSCAD from './vendor/openscad.js'
 import { openscadArgs } from './args'
+import { parseOFF, type ParsedMesh } from './off'
 import {
   BUNDLED_FAMILIES,
   extractCatalogFontSpecs,
@@ -15,17 +16,49 @@ import {
   type FontSpec,
 } from './fonts'
 
-// Served as static assets from public/openscad (fetched once per worker,
-// then cached in module scope for subsequent renders).
-const wasmUrl = '/openscad/openscad.wasm'
-const fontsZipUrl = '/openscad/fonts.zip'
+/**
+ * Bump when public/openscad/* changes. The files are served immutable (see
+ * next.config.ts), so the version in the query string is what busts the cache.
+ */
+export const OPENSCAD_ASSET_VERSION = '2025.03.25-1'
+const wasmUrl = `/openscad/openscad.wasm?v=${OPENSCAD_ASSET_VERSION}`
+const fontsZipUrl = `/openscad/fonts.zip?v=${OPENSCAD_ASSET_VERSION}`
 
 // The OpenSCAD wasm build runs `main()` exactly once per module instance
 // (calling `callMain` a second time aborts the runtime). So we build a fresh
-// instance for every render, reusing the fetched wasm bytes and fonts.
-let wasmBytes: ArrayBuffer | null = null
-let fontFiles: Record<string, Uint8Array> | null = null
-let logBuffer: string[] = []
+// instance for every render, but compile the 9.6 MB binary once and reuse
+// the compiled `WebAssembly.Module` for every instance: instantiating a
+// compiled module is cheap, compiling the bytes again is not, and a fresh
+// compile also restarts from the baseline tier each time.
+interface Assets {
+  wasmModule: WebAssembly.Module
+  fontFiles: Record<string, Uint8Array>
+}
+let assetsPromise: Promise<Assets> | null = null
+
+async function fetchBinary(url: string, what: string): Promise<ArrayBuffer> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`Failed to load ${what} (${res.status}).`)
+  return res.arrayBuffer()
+}
+
+function loadAssets(): Promise<Assets> {
+  assetsPromise ??= (async () => {
+    const [wasmModule, fontsZip] = await Promise.all([
+      WebAssembly.compileStreaming(fetch(wasmUrl)).catch(async () =>
+        // Older browsers, or a server that does not send application/wasm.
+        WebAssembly.compile(await fetchBinary(wasmUrl, 'OpenSCAD wasm')),
+      ),
+      fetchBinary(fontsZipUrl, 'font bundle'),
+    ])
+    return { wasmModule, fontFiles: unzipSync(new Uint8Array(fontsZip)) }
+  })()
+  // A failed download must not poison every later render.
+  assetsPromise.catch(() => {
+    assetsPromise = null
+  })
+  return assetsPromise
+}
 
 // Google Fonts fetched on demand, keyed by "family|style" (lowercased).
 // `null` marks a family the API said doesn't exist, so we don't re-ask
@@ -50,6 +83,7 @@ function loadFontCatalog(): Promise<Set<string>> {
 
 async function loadGoogleFonts(
   code: string,
+  log: string[],
 ): Promise<{ name: string; data: Uint8Array }[]> {
   // Explicit `font = "..."` specs always count; the catalog scan also finds
   // font names that reach text() through variables or module parameters.
@@ -90,7 +124,7 @@ async function loadGoogleFonts(
       } else if (!BUNDLED_FAMILIES.has(spec.family.toLowerCase())) {
         // A bundled family missing only a style still renders (regular
         // weight); an unknown family is worth a visible warning.
-        logBuffer.push(
+        log.push(
           `WARNING: Could not load font "${spec.family}" from Google Fonts; falling back to the default font.`,
         )
       }
@@ -111,55 +145,67 @@ interface RenderFile {
  */
 export type ExportFormat = 'off' | 'binstl'
 
-interface RenderRequest {
-  id: number
-  code: string
-  files?: RenderFile[]
-  format?: ExportFormat
-}
+/** Messages from the main thread. */
+export type WorkerRequest =
+  | { type: 'warmup' }
+  | {
+      type: 'render' | 'export'
+      id: number
+      code: string
+      files?: RenderFile[]
+      format?: ExportFormat
+    }
 
-interface RenderOk {
-  id: number
-  ok: true
-  data: ArrayBuffer
-  format: ExportFormat
-  log: string
-}
+/** Messages to the main thread. */
+export type WorkerResponse =
+  | { type: 'ready' }
+  | { type: 'render'; id: number; ok: true; mesh: ParsedMesh; log: string }
+  | { type: 'render'; id: number; ok: false; error: string; log: string }
+  | { type: 'export'; id: number; ok: true; data: ArrayBuffer; format: ExportFormat; log: string }
+  | { type: 'export'; id: number; ok: false; error: string; log: string }
 
-interface RenderErr {
-  id: number
-  ok: false
-  error: string
-  log: string
-}
+// A `font =` assignment counts too, in case a font reaches text() through a
+// path the call scan misses: mounting fonts needlessly costs time, missing
+// them costs the render.
+const TEXT_CALL = /\b(?:text|textmetrics)\s*\(|\bfont\s*=/
 
-async function fetchBinary(url: string, what: string): Promise<ArrayBuffer> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`Failed to load ${what} (${res.status}).`)
-  return res.arrayBuffer()
+/**
+ * Whether this render can use text(). Mounting the font bundle means writing
+ * 97 files (14 MB) into the wasm FS and letting fontconfig scan them, which
+ * costs as much as rendering a simple model, so it is skipped for programs
+ * that never call text(). Workspace .scad libraries are scanned too, since the
+ * main program may only call a module that does.
+ */
+function usesText(code: string, files: RenderFile[]): boolean {
+  if (TEXT_CALL.test(code)) return true
+  const decoder = new TextDecoder()
+  return files.some(
+    (f) => f.name.toLowerCase().endsWith('.scad') && TEXT_CALL.test(decoder.decode(f.data)),
+  )
 }
 
 async function render(
   code: string,
   files: RenderFile[],
   format: ExportFormat,
-): Promise<{ data: ArrayBuffer; log: string }> {
-  logBuffer = []
-  const googleFontsPromise = loadGoogleFonts(code)
-  if (!wasmBytes || !fontFiles) {
-    const [wasm, fontsZip] = await Promise.all([
-      fetchBinary(wasmUrl, 'OpenSCAD wasm'),
-      fetchBinary(fontsZipUrl, 'font bundle'),
-    ])
-    wasmBytes = wasm
-    fontFiles = unzipSync(new Uint8Array(fontsZip))
-  }
-  const extraFonts = await googleFontsPromise
+  log: string[],
+): Promise<Uint8Array> {
+  const withText = usesText(code, files)
+  const [assets, extraFonts] = await Promise.all([
+    loadAssets(),
+    withText ? loadGoogleFonts(code, log) : Promise.resolve([]),
+  ])
+  const { wasmModule, fontFiles } = assets
   const instance = await OpenSCAD({
     noInitialRun: true,
-    wasmBinary: wasmBytes,
-    print: (t: string) => logBuffer.push(t),
-    printErr: (t: string) => logBuffer.push(t),
+    instantiateWasm: (imports, onInstantiated) => {
+      WebAssembly.instantiate(wasmModule, imports).then((wasmInstance) =>
+        onInstantiated(wasmInstance, wasmModule),
+      )
+      return {}
+    },
+    print: (t: string) => log.push(t),
+    printErr: (t: string) => log.push(t),
     // Point fontconfig at /fonts (which holds fonts.conf + all the ttfs)
     // before main() runs, so text() can find its fonts.
     preRun: [(mod: { ENV: Record<string, string> }) => {
@@ -169,13 +215,15 @@ async function render(
   const fs = instance.FS
 
   fs.mkdir('/fonts')
-  for (const [name, data] of Object.entries(fontFiles)) {
-    fs.writeFile(`/fonts/${name}`, data)
-  }
-  // On-demand Google Fonts land in the same fontconfig dir; fontconfig
-  // registers them by the family name embedded in the file.
-  for (const f of extraFonts) {
-    fs.writeFile(`/fonts/${f.name}`, f.data)
+  if (withText) {
+    for (const [name, data] of Object.entries(fontFiles)) {
+      fs.writeFile(`/fonts/${name}`, data)
+    }
+    // On-demand Google Fonts land in the same fontconfig dir; fontconfig
+    // registers them by the family name embedded in the file.
+    for (const f of extraFonts) {
+      fs.writeFile(`/fonts/${f.name}`, f.data)
+    }
   }
 
   // Workspace files live next to input.scad so `import("name.svg")` and
@@ -189,9 +237,7 @@ async function render(
   try {
     instance.callMain(openscadArgs(format))
   } catch (e) {
-    throw new Error(
-      cleanLog() || String(e) || 'OpenSCAD failed to run.',
-    )
+    throw new Error(cleanLog(log) || String(e) || 'OpenSCAD failed to run.')
   }
 
   let data: Uint8Array
@@ -199,23 +245,20 @@ async function render(
     data = fs.readFile('/output.dat')
   } catch {
     throw new Error(
-      cleanLog() ||
+      cleanLog(log) ||
         'OpenSCAD produced no output (the model may be empty or contain errors).',
     )
   }
 
   if (data.byteLength === 0) {
-    throw new Error(cleanLog() || 'OpenSCAD produced an empty model.')
+    throw new Error(cleanLog(log) || 'OpenSCAD produced an empty model.')
   }
-
-  // Copy into a fresh ArrayBuffer we can transfer to the main thread.
-  const buffer = data.slice().buffer
-  return { data: buffer, log: logBuffer.join('\n') }
+  return data
 }
 
 /** Keep only meaningful lines from OpenSCAD's log (drop the geometry chatter). */
-function cleanLog(): string {
-  return logBuffer
+function cleanLog(log: string[]): string {
+  return log
     .filter((l) => {
       const s = l.toLowerCase()
       return (
@@ -230,19 +273,81 @@ function cleanLog(): string {
     .trim()
 }
 
-self.onmessage = async (e: MessageEvent<RenderRequest>) => {
-  const { id, code, files, format = 'off' } = e.data
+function post(msg: WorkerResponse, transfer: Transferable[] = []) {
+  ;(self as unknown as Worker).postMessage(msg, transfer)
+}
+
+type Job = Extract<WorkerRequest, { type: 'render' | 'export' }>
+
+// Jobs run one at a time (callMain is synchronous and the FS is per instance).
+// A newer preview request replaces any preview still waiting in the queue:
+// only the latest source matters, and the main thread drops stale results
+// anyway, so rendering them would just delay the one the user is looking at.
+// Exports are never dropped; each resolves its own promise.
+const queue: Job[] = []
+let running = false
+
+async function runJob(job: Job) {
+  const log: string[] = []
+  const format = job.format ?? 'off'
   try {
-    const { data, log } = await render(code, files ?? [], format)
-    const msg: RenderOk = { id, ok: true, data, format, log }
-    ;(self as unknown as Worker).postMessage(msg, [data])
+    const output = await render(job.code, job.files ?? [], format, log)
+    if (job.type === 'render') {
+      // Parse the text OFF here rather than on the main thread, where a
+      // detailed model's multi-megabyte parse would freeze the UI; the typed
+      // arrays transfer without a copy.
+      const mesh = parseOFF(output)
+      const transfer: Transferable[] = [mesh.vertices.buffer, mesh.triangles.buffer]
+      if (mesh.faceColors) transfer.push(mesh.faceColors.buffer)
+      post({ type: 'render', id: job.id, ok: true, mesh, log: log.join('\n') }, transfer)
+    } else {
+      const data = output.slice().buffer
+      post({ type: 'export', id: job.id, ok: true, data, format, log: log.join('\n') }, [data])
+    }
   } catch (err) {
-    const msg: RenderErr = {
-      id,
+    post({
+      type: job.type,
+      id: job.id,
       ok: false,
       error: err instanceof Error ? err.message : String(err),
-      log: logBuffer.join('\n'),
-    }
-    ;(self as unknown as Worker).postMessage(msg)
+      log: log.join('\n'),
+    })
   }
 }
+
+async function drain() {
+  if (running) return
+  running = true
+  try {
+    while (queue.length) {
+      const job = queue.shift()!
+      await runJob(job)
+    }
+  } finally {
+    running = false
+  }
+}
+
+self.onmessage = (e: MessageEvent<WorkerRequest>) => {
+  const msg = e.data
+  if (msg.type === 'warmup') {
+    loadAssets().then(
+      () => post({ type: 'ready' }),
+      () => {
+        // Reported on the first render that needs the assets.
+      },
+    )
+    return
+  }
+  if (msg.type === 'render') {
+    for (let i = queue.length - 1; i >= 0; i--) {
+      if (queue[i].type === 'render') queue.splice(i, 1)
+    }
+  }
+  queue.push(msg)
+  void drain()
+}
+
+// Start downloading and compiling as soon as the worker exists, so the first
+// preview is not also waiting on 17 MB of wasm and fonts.
+void loadAssets().catch(() => {})
