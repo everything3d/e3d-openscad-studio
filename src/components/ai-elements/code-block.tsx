@@ -27,7 +27,19 @@ import type {
   HighlighterGeneric,
   ThemedToken,
 } from "shiki";
-import { createHighlighter } from "shiki";
+import { createHighlighterCore } from "shiki/core";
+import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
+import openscadGrammar from "shiki/langs/openscad.mjs";
+import githubDark from "shiki/themes/github-dark.mjs";
+import githubLight from "shiki/themes/github-light.mjs";
+
+// The studio highlights one language. The full `shiki` entry would pull in
+// the registry for all 300+ grammars plus the Oniguruma wasm engine (~600 KB
+// of inlined wasm fetched on the first code block); the JavaScript regex
+// engine with the one grammar and two themes is a fraction of that.
+const bundledLanguages: Partial<
+  Record<BundledLanguage, typeof openscadGrammar>
+> = { openscad: openscadGrammar };
 
 // Shiki uses bitflags for font styles: 1=italic, 2=bold, 4=underline
 // oxlint-disable-next-line eslint(no-bitwise)
@@ -155,10 +167,12 @@ const getHighlighter = (
     return cached;
   }
 
-  const highlighterPromise = createHighlighter({
-    langs: [language],
-    themes: ["github-light", "github-dark"],
-  });
+  const grammar = bundledLanguages[language];
+  const highlighterPromise = createHighlighterCore({
+    langs: grammar ? [grammar] : [],
+    themes: [githubLight, githubDark],
+    engine: createJavaScriptRegexEngine({ forgiving: true }),
+  }) as Promise<HighlighterGeneric<BundledLanguage, BundledTheme>>;
 
   highlighterCache.set(language, highlighterPromise);
   return highlighterPromise;

@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
+import type { UIMessage } from 'ai'
 import { UserButton } from '@clerk/nextjs'
 import { Maximize2Icon, MenuIcon, Minimize2Icon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -17,14 +19,33 @@ import {
 } from '@/lib/types'
 import type { StudioUIMessage } from '@/lib/agents/studio-agent'
 import { Sidebar } from './sidebar'
-import { ChatPanel } from './chat-panel'
-import { CodeEditor } from './code-editor'
-import { Preview } from './preview'
 import { ShareProjectDialog } from './share-project-dialog'
 import { WorkspacePanel } from './workspace-panel'
 import { StarterLibrary } from './starter-library'
 import { SaveAsStarterDialog } from './save-as-starter-dialog'
 import { OrderDialog } from './order-dialog'
+
+// The workspace pulls in the chat stack (markdown, syntax highlighting),
+// CodeMirror and three.js, together most of the page's JavaScript. Loading
+// them on demand keeps the canonical library light, and none of them can
+// render on the server anyway (they need the DOM and WebGL).
+const workspaceFallback = (
+  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+    Loading…
+  </div>
+)
+const ChatPanel = dynamic(() => import('./chat-panel').then((m) => m.ChatPanel), {
+  ssr: false,
+  loading: () => workspaceFallback,
+})
+const CodeEditor = dynamic(() => import('./code-editor').then((m) => m.CodeEditor), {
+  ssr: false,
+  loading: () => workspaceFallback,
+})
+const Preview = dynamic(() => import('./preview').then((m) => m.Preview), {
+  ssr: false,
+  loading: () => workspaceFallback,
+})
 
 type OpenProject = FullProject & { messages: StudioUIMessage[] }
 type RightTab = 'preview' | 'code' | 'files'
@@ -33,18 +54,27 @@ export function Studio({
   initialProjects,
   initialCanonicals,
   initialActiveId = null,
+  initialProject = null,
   checkoutEnabled = false,
 }: {
   initialProjects: ProjectSummary[]
   initialCanonicals: CanonicalSummary[]
   initialActiveId?: string | null
+  /** The workspace for `initialActiveId`, when the server already loaded it. */
+  initialProject?: (FullProject & { messages: UIMessage[] }) | null
   /** False when Shopify is not configured: orders then go through WhatsApp. */
   checkoutEnabled?: boolean
 }) {
   const [projects, setProjects] = useState<ProjectSummary[]>(initialProjects)
   const [canonicals, setCanonicals] = useState<CanonicalSummary[]>(initialCanonicals)
   const [activeId, setActiveId] = useState<string | null>(initialActiveId)
-  const [project, setProject] = useState<OpenProject | null>(null)
+  const [project, setProject] = useState<OpenProject | null>(
+    initialProject && initialProject.id === initialActiveId
+      ? (initialProject as OpenProject)
+      : null,
+  )
+  /** Set while the server-loaded workspace is current, so the first effect run does not refetch it. */
+  const preloadedId = useRef<string | null>(project?.id ?? null)
   const [rightTab, setRightTab] = useState<RightTab>('preview')
   const [thumbnail, setThumbnail] = useState<string | null>(null)
   const [orderOpen, setOrderOpen] = useState(false)
@@ -52,7 +82,7 @@ export function Studio({
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [workspaceExpanded, setWorkspaceExpanded] = useState(false)
 
-  const { state: renderState, render, reset: resetRenderer, exportModel } = useRenderer()
+  const { state: renderState, render, reset: resetRenderer, exportModel, warmup } = useRenderer()
 
   // ---- server helpers ------------------------------------------------------
   const refreshList = useCallback(async () => {
@@ -107,11 +137,19 @@ export function Studio({
     setThumbnail(null)
     resetRenderer()
     if (activeId) {
+      // Start fetching the wasm and fonts now, in parallel with the project
+      // itself, instead of after it arrives and the first render is requested.
+      warmup()
+      if (preloadedId.current === activeId) {
+        // Already in state from the server render; nothing to fetch.
+        preloadedId.current = null
+        return
+      }
       void openProject(activeId)
       return
     }
     setProject(null)
-  }, [activeId, openProject, resetRenderer])
+  }, [activeId, openProject, resetRenderer, warmup])
 
   // Never reuse a preview after its source starts rendering or fails. The next
   // successful mesh supplies a fresh thumbnail for the active workspace.

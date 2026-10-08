@@ -1,0 +1,1 @@
+CREATE INDEX "messages_project_seq_idx" ON "messages" USING btree ("project_id","seq");

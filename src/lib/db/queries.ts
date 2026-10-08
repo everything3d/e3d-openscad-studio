@@ -302,6 +302,52 @@ export async function getProject(id: string, userId: string): Promise<FullProjec
   }
 }
 
+export interface ChatProject {
+  id: string
+  code: string
+  fileNames: string[]
+  canonicalVersionId: string | null
+  /** The guide for the canonical version this workspace came from, if any. */
+  modificationGuide: string | null
+}
+
+/**
+ * What a chat turn needs to brief the agent: the source, the workspace file
+ * names and the canonical guide. Deliberately not `getProject`, which also
+ * loads every workspace file's contents (hundreds of KB for the starters that
+ * ship libraries) only for the names to be kept.
+ */
+export async function getProjectForChat(id: string, userId: string): Promise<ChatProject | null> {
+  const [project] = await db
+    .select({
+      id: projects.id,
+      code: projects.code,
+      canonicalVersionId: projects.canonicalVersionId,
+    })
+    .from(projects)
+    .where(and(eq(projects.id, id), eq(projects.userId, userId)))
+  if (!project) return null
+
+  const [files, guide] = await Promise.all([
+    db
+      .select({ name: workspaceFiles.name })
+      .from(workspaceFiles)
+      .where(eq(workspaceFiles.projectId, id))
+      .orderBy(asc(workspaceFiles.addedAt)),
+    project.canonicalVersionId
+      ? getCanonicalModificationGuide(project.canonicalVersionId)
+      : Promise.resolve(null),
+  ])
+
+  return {
+    id: project.id,
+    code: project.code,
+    fileNames: files.map((f) => f.name),
+    canonicalVersionId: project.canonicalVersionId,
+    modificationGuide: guide,
+  }
+}
+
 export async function getProjectMessages(id: string): Promise<UIMessage[]> {
   const rows = await db
     .select()
@@ -364,6 +410,36 @@ export async function forkProject(sourceId: string, userId: string): Promise<Ful
 type CanonicalDesignRecord = typeof canonicalDesigns.$inferSelect
 type CanonicalVersionRecord = typeof canonicalVersions.$inferSelect
 
+/**
+ * What the client gets as a canonical's thumbnail. Built-ins reference a
+ * static image by path. Published designs store a data URL of up to 300 KB;
+ * handing that to the browser as a URL to /api/canonicals/[id]/thumbnail
+ * keeps it out of the page HTML and the RSC payload (once per design, twice
+ * per load) and lets the browser cache it. The version id in the query
+ * changes the URL whenever the design is republished.
+ */
+function thumbnailUrl(design: CanonicalDesignRecord, thumbnail: string | null): string | null {
+  if (!thumbnail) return null
+  if (!thumbnail.startsWith('data:')) return thumbnail
+  return `/api/canonicals/${encodeURIComponent(design.id)}/thumbnail?v=${encodeURIComponent(design.currentVersionId)}`
+}
+
+/** The raw stored thumbnail (a data URL for published designs) of a live canonical's current version. */
+export async function getCanonicalThumbnail(id: string, versionId: string | null): Promise<string | null> {
+  const [row] = await db
+    .select({ thumbnail: canonicalVersions.thumbnail })
+    .from(canonicalDesigns)
+    .innerJoin(
+      canonicalVersions,
+      and(
+        eq(canonicalVersions.canonicalDesignId, canonicalDesigns.id),
+        eq(canonicalVersions.id, versionId ?? canonicalDesigns.currentVersionId),
+      ),
+    )
+    .where(and(eq(canonicalDesigns.id, id), isNull(canonicalDesigns.archivedAt)))
+  return row?.thumbnail ?? null
+}
+
 function toCanonicalSummary(
   design: CanonicalDesignRecord,
   version: Pick<CanonicalVersionRecord, 'versionNumber' | 'thumbnail'> & { fileCount: number },
@@ -376,7 +452,7 @@ function toCanonicalSummary(
     category: design.category,
     currentVersionId: design.currentVersionId,
     versionNumber: version.versionNumber,
-    thumbnail: version.thumbnail,
+    thumbnail: thumbnailUrl(design, version.thumbnail),
     fileCount: version.fileCount,
     isOwner: design.ownerId === userId,
     updatedAt: design.updatedAt.getTime(),
@@ -418,8 +494,66 @@ let builtInCanonicalSeed: Promise<void> | null = null
  * on failure so a transient outage does not disable the catalog for the life
  * of the process.
  */
+/**
+ * One round trip that answers "is the catalog already current?": every
+ * starter's design row points at its current content version, is live, and
+ * no superseded or retired row is still visible. When it is, which is every
+ * request after the first deploy of a given catalog, the seeding transaction
+ * below (several queries per starter, in series) is skipped entirely. That
+ * transaction used to run on the first /studio of every cold server instance.
+ */
+async function builtInCanonicalsCurrent(): Promise<boolean> {
+  const expected = BUILT_IN_CANONICALS.map((starter) => ({
+    id: starter.id,
+    versionId: builtInVersionId(starter),
+  }))
+  const retired = [
+    ...BUILT_IN_CANONICALS.flatMap((starter) => starter.supersedes ?? []),
+    ...RETIRED_CANONICAL_IDS,
+  ]
+  const rows = await db
+    .select({
+      id: canonicalDesigns.id,
+      currentVersionId: canonicalDesigns.currentVersionId,
+      archivedAt: canonicalDesigns.archivedAt,
+      title: canonicalDesigns.title,
+      description: canonicalDesigns.description,
+      category: canonicalDesigns.category,
+    })
+    .from(canonicalDesigns)
+    .where(inArray(canonicalDesigns.id, [...expected.map((e) => e.id), ...retired]))
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  for (const starter of BUILT_IN_CANONICALS) {
+    const row = byId.get(starter.id)
+    if (
+      !row ||
+      row.archivedAt ||
+      row.currentVersionId !== builtInVersionId(starter) ||
+      row.title !== starter.title ||
+      row.description !== starter.description ||
+      (row.category ?? null) !== (starter.category ?? null)
+    ) {
+      return false
+    }
+  }
+  return retired.every((id) => byId.get(id)?.archivedAt || !byId.has(id))
+}
+
 async function ensureBuiltInCanonicals(): Promise<void> {
-  builtInCanonicalSeed ??= db
+  builtInCanonicalSeed ??= builtInCanonicalsCurrent()
+    .then((current) => {
+      if (current) return
+      return seedBuiltInCanonicals()
+    })
+    .catch((error) => {
+      builtInCanonicalSeed = null
+      throw error
+    })
+  return builtInCanonicalSeed
+}
+
+function seedBuiltInCanonicals(): Promise<void> {
+  return db
     .transaction(async (tx) => {
       for (const starter of BUILT_IN_CANONICALS) {
         const versionId = builtInVersionId(starter)
@@ -501,11 +635,6 @@ async function ensureBuiltInCanonicals(): Promise<void> {
         .set({ archivedAt: new Date() })
         .where(and(inArray(canonicalDesigns.id, retired), isNull(canonicalDesigns.archivedAt)))
     })
-    .catch((error) => {
-      builtInCanonicalSeed = null
-      throw error
-    })
-  return builtInCanonicalSeed
 }
 
 /** Where a starter sits in the curated order, or -1 for a user's own design. */
@@ -522,7 +651,12 @@ export async function listCanonicals(userId: string): Promise<CanonicalSummary[]
       design: canonicalDesigns,
       version: {
         versionNumber: canonicalVersions.versionNumber,
-        thumbnail: canonicalVersions.thumbnail,
+        // A published thumbnail is a data URL of up to 300 KB that the
+        // summary only turns into a route URL (see thumbnailUrl), so fetch
+        // just enough of it to tell a data URL from a static path.
+        thumbnail: sql<string | null>`case
+          when ${canonicalVersions.thumbnail} like 'data:%' then 'data:'
+          else ${canonicalVersions.thumbnail} end`,
         fileCount: sql<number>`jsonb_array_length(${canonicalVersions.files})`.mapWith(Number),
       },
     })
@@ -977,10 +1111,36 @@ export async function saveChat({
   code: string | null
 }): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx.delete(messages).where(eq(messages.projectId, projectId))
-    if (uiMessages.length) {
+    // Serialize saves for the same workspace so overlapping chat requests
+    // cannot both observe the same prefix and insert duplicate messages.
+    const [project] = await tx
+      .select({ name: projects.name })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .for('update')
+    if (!project) return
+
+    // A turn normally only appends (the user's message and the assistant's
+    // reply), so insert what is new rather than rewriting the whole history:
+    // that rewrite grew with every turn and copied every image attachment
+    // again. Fall back to the full rewrite only when the incoming history has
+    // dropped or reordered something the database already holds.
+    const stored = await tx
+      .select({ id: messages.id })
+      .from(messages)
+      .where(eq(messages.projectId, projectId))
+      .orderBy(asc(messages.seq))
+    const storedIds = stored.map((row) => row.id)
+    const isAppend =
+      storedIds.length <= uiMessages.length &&
+      storedIds.every((id, i) => id === uiMessages[i].id)
+    const toInsert = isAppend ? uiMessages.slice(storedIds.length) : uiMessages
+    if (!isAppend) {
+      await tx.delete(messages).where(eq(messages.projectId, projectId))
+    }
+    if (toInsert.length) {
       await tx.insert(messages).values(
-        uiMessages.map((m) => ({
+        toInsert.map((m) => ({
           id: m.id,
           projectId,
           role: m.role,
@@ -1000,11 +1160,7 @@ export async function saveChat({
       .find((m) => m.role === 'user')
       ?.parts.find((p) => p.type === 'text')
     if (firstUserText && 'text' in firstUserText) {
-      const [project] = await tx
-        .select({ name: projects.name })
-        .from(projects)
-        .where(eq(projects.id, projectId))
-      if (project?.name === PLACEHOLDER_PROJECT_NAME) {
+      if (project.name === PLACEHOLDER_PROJECT_NAME) {
         patch.name = firstUserText.text.slice(0, 40)
       }
     }

@@ -117,6 +117,9 @@ export function ChatPanel({
     messages: initialMessages,
     transport,
     onFinish: onTurnFinish,
+    // Coalesce streamed deltas: without this every token re-renders the whole
+    // message list, which makes typing in the editor stutter while the agent writes.
+    throttle: 50,
   })
 
   // Apply agent-written code to the editor/preview as soon as the tool input

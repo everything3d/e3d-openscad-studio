@@ -2,7 +2,7 @@ import { createAgentUIStreamResponse, generateId, validateUIMessages, type UIMes
 import { auth } from '@clerk/nextjs/server'
 import { createStudioAgent, studioTools, type StudioUIMessage } from '@/lib/agents/studio-agent'
 import { guardModelCall, spendGuardTextResponse } from '@/lib/spend-guard'
-import { getCanonicalModificationGuide, getProject, saveChat } from '@/lib/db/queries'
+import { getProjectForChat, saveChat } from '@/lib/db/queries'
 
 export const maxDuration = 120
 
@@ -39,7 +39,12 @@ export async function POST(req: Request) {
   if (!projectId) {
     return Response.json({ error: 'projectId is required' }, { status: 400 })
   }
-  const project = await getProject(projectId, userId)
+  // Validating the history does not touch the database, so it overlaps the
+  // project lookup instead of waiting behind it.
+  const validated = validateUIMessages<StudioUIMessage>({ messages: rawMessages, tools: studioTools })
+  validated.catch(() => {}) // surfaced below; this only avoids an unhandled rejection
+
+  const project = await getProjectForChat(projectId, userId)
   if (!project) {
     return Response.json({ error: 'Project not found' }, { status: 404 })
   }
@@ -49,23 +54,13 @@ export async function POST(req: Request) {
   const verdict = await guardModelCall(userId)
   if (!verdict.allowed) return spendGuardTextResponse(verdict)
 
-  const uiMessages = (await validateUIMessages({
-    messages: rawMessages,
-    tools: studioTools,
-  })) as StudioUIMessage[]
+  const uiMessages = await validated
 
   // Prefer the live editor content over the DB row: manual edits are only
   // persisted after a debounce, so the row can be stale at send time.
   const currentCode = typeof liveCode === 'string' ? liveCode : project.code
 
-  const modificationGuide = project.canonicalVersionId
-    ? await getCanonicalModificationGuide(project.canonicalVersionId)
-    : null
-  const agent = createStudioAgent(
-    currentCode,
-    project.files.map((f) => f.name),
-    modificationGuide,
-  )
+  const agent = createStudioAgent(currentCode, project.fileNames, project.modificationGuide)
 
   return createAgentUIStreamResponse({
     agent,
