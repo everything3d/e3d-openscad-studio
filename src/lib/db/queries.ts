@@ -8,6 +8,7 @@ import {
   RETIRED_CANONICAL_IDS,
   SYSTEM_CANONICAL_OWNER_ID,
   builtInVersionId,
+  builtInWorkspaceFiles,
 } from '../builtin-canonicals'
 import {
   canonicalDesigns,
@@ -365,10 +366,9 @@ type CanonicalVersionRecord = typeof canonicalVersions.$inferSelect
 
 function toCanonicalSummary(
   design: CanonicalDesignRecord,
-  version: CanonicalVersionRecord,
+  version: Pick<CanonicalVersionRecord, 'versionNumber' | 'thumbnail'> & { fileCount: number },
   userId: string,
 ): CanonicalSummary {
-  const files = version.files as WorkspaceFile[]
   return {
     id: design.id,
     title: design.title,
@@ -377,7 +377,7 @@ function toCanonicalSummary(
     currentVersionId: design.currentVersionId,
     versionNumber: version.versionNumber,
     thumbnail: version.thumbnail,
-    fileCount: files.length,
+    fileCount: version.fileCount,
     isOwner: design.ownerId === userId,
     updatedAt: design.updatedAt.getTime(),
   }
@@ -389,7 +389,7 @@ function toCanonicalDetail(
   userId: string,
 ): CanonicalDetail {
   return {
-    ...toCanonicalSummary(design, version, userId),
+    ...toCanonicalSummary(design, { ...version, fileCount: (version.files as WorkspaceFile[]).length }, userId),
     code: version.code,
     files: version.files as WorkspaceFile[],
     modificationGuide: version.modificationGuide,
@@ -450,7 +450,7 @@ async function ensureBuiltInCanonicals(): Promise<void> {
             canonicalDesignId: starter.id,
             versionNumber,
             code: starter.code,
-            files: [],
+            files: builtInWorkspaceFiles(starter),
             modificationGuide: starter.modificationGuide,
             thumbnail: starter.thumbnail,
             changeSummary:
@@ -515,8 +515,17 @@ function builtInRank(id: string): number {
 
 export async function listCanonicals(userId: string): Promise<CanonicalSummary[]> {
   await ensureBuiltInCanonicals()
+  // Only the summary fields: source and file data can run to hundreds of
+  // kilobytes per design, and the gallery shows neither.
   const rows = await db
-    .select({ design: canonicalDesigns, version: canonicalVersions })
+    .select({
+      design: canonicalDesigns,
+      version: {
+        versionNumber: canonicalVersions.versionNumber,
+        thumbnail: canonicalVersions.thumbnail,
+        fileCount: sql<number>`jsonb_array_length(${canonicalVersions.files})`.mapWith(Number),
+      },
+    })
     .from(canonicalDesigns)
     .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
     .where(isNull(canonicalDesigns.archivedAt))

@@ -5,6 +5,7 @@ import {
   RETIRED_CANONICAL_IDS,
   SYSTEM_CANONICAL_OWNER_ID,
   builtInVersionId,
+  builtInWorkspaceFiles,
 } from './builtin-canonicals'
 import { needsGoogleFetch, parseFontSpec } from './openscad/fonts'
 
@@ -27,6 +28,7 @@ describe('built-in canonical catalog', () => {
       'builtin-figurine-display-base',
       'builtin-award-plaque-base',
       'builtin-two-name-illusion',
+      'builtin-letter-pen-stand',
     ])
   })
 
@@ -54,7 +56,8 @@ describe('built-in canonical catalog', () => {
   it('only uses bundled fonts, so a starter never depends on a network fetch', () => {
     // fontconfig falls back silently when a family is missing, so a typo or
     // an unbundled font would quietly change the design rather than fail.
-    for (const starter of BUILT_IN_CANONICALS) {
+    // The letter pen stand draws its name from embedded outlines, not text().
+    for (const starter of BUILT_IN_CANONICALS.filter((s) => s.id !== 'builtin-letter-pen-stand')) {
       const fonts = [...starter.code.matchAll(/\b\w*[Ff]ont\d?\s*=\s*"([^"]+)"/g)].map((m) => m[1])
       expect(fonts.length, starter.id).toBeGreaterThan(0)
       for (const font of fonts) {
@@ -101,6 +104,30 @@ describe('built-in canonical catalog', () => {
     expect(illusion.code).toContain('intersection()')
     expect(illusion.code).toContain('frontName = "LOVE"')
     expect(illusion.code).toContain('sideName = "HOME"')
+
+    // The stand and the name's outlines live in workspace files the program uses.
+    const penStand = byId('builtin-letter-pen-stand')
+    expect(penStand.code).toContain('use <letter-stands.scad>')
+    expect(penStand.code).toContain('use <pacifico-outlines.scad>')
+    expect(penStand.files?.map((f) => f.name)).toEqual(['letter-stands.scad', 'pacifico-outlines.scad'])
+  })
+
+  it('keeps bulky geometry out of the program the agent rewrites', () => {
+    // The agent sees and rewrites the whole program on every change.
+    for (const starter of BUILT_IN_CANONICALS) {
+      expect(starter.code.length, starter.id).toBeLessThan(20_000)
+    }
+  })
+
+  it('ships workspace files that round-trip through base64', () => {
+    const starter = byId('builtin-letter-pen-stand')
+    const files = builtInWorkspaceFiles(starter)
+    expect(files.map((f) => f.addedAt)).toEqual([0, 1])
+    for (const [i, file] of files.entries()) {
+      expect(Buffer.from(file.data, 'base64').toString('utf8')).toBe(starter.files![i].text)
+      expect(file.size).toBe(Buffer.byteLength(starter.files![i].text))
+    }
+    expect(builtInWorkspaceFiles(byId('builtin-name-keychain'))).toEqual([])
   })
 })
 
@@ -122,6 +149,11 @@ describe('built-in version ids', () => {
       original,
     )
     expect(builtInVersionId({ ...starter, thumbnail: '/canonicals/other.webp' })).not.toBe(original)
+    const withFile = { ...starter, files: [{ name: 'lib.scad', text: 'x = 1;' }] }
+    expect(builtInVersionId(withFile)).not.toBe(original)
+    expect(builtInVersionId({ ...starter, files: [{ name: 'lib.scad', text: 'x = 2;' }] })).not.toBe(
+      builtInVersionId(withFile),
+    )
   })
 
   it('ignore metadata, which is refreshed in place rather than versioned', () => {
