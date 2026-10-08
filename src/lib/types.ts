@@ -86,6 +86,31 @@ export const CANONICAL_LIMITS = {
  */
 export const PLACEHOLDER_PROJECT_NAME = 'Untitled project'
 
+const DERIVATIVE_SUFFIX = ' — new'
+
+/**
+ * Provisional name for a derivative started from a canonical design, before the
+ * user has said what they're making of it. Like the placeholder, it gets
+ * replaced by an inferred name once the first chat message arrives.
+ */
+export function provisionalDerivativeName(canonicalTitle: string): string {
+  return `${canonicalTitle}${DERIVATIVE_SUFFIX}`
+}
+
+/**
+ * Whether a project still carries a name nobody chose, so the first chat
+ * message may replace it. Returns the base design title for derivatives
+ * (`''` for a blank project), or null if the project is already named.
+ */
+export function provisionalNameBase(name: string): string | null {
+  if (name === PLACEHOLDER_PROJECT_NAME) return ''
+  if (name.endsWith(DERIVATIVE_SUFFIX)) {
+    const base = name.slice(0, -DERIVATIVE_SUFFIX.length).trim()
+    return base || null
+  }
+  return null
+}
+
 export const DEFAULT_CODE = `// Welcome to E3D OpenSCAD Studio.
 // Describe what you want to build in the chat and the AI will write
 // the OpenSCAD code here. You can also edit it directly.

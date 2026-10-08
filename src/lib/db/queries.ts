@@ -897,13 +897,14 @@ export async function renameProject(id: string, userId: string, name: string): P
 }
 
 /**
- * Apply an inferred name, but only while the project is still unnamed — so a
- * name the user typed (or an earlier auto-name) is never clobbered. Returns
- * whether the name was actually applied.
+ * Apply an inferred name, but only while the project still carries the
+ * provisional name it was read with — so a name the user typed (or an earlier
+ * auto-name) is never clobbered. Returns whether the name was actually applied.
  */
 export async function autoNameProject(
   id: string,
   userId: string,
+  provisionalName: string,
   name: string,
 ): Promise<boolean> {
   const rows = await db
@@ -913,7 +914,7 @@ export async function autoNameProject(
       and(
         eq(projects.id, id),
         eq(projects.userId, userId),
-        eq(projects.name, PLACEHOLDER_PROJECT_NAME),
+        eq(projects.name, provisionalName),
       ),
     )
     .returning({ id: projects.id })
