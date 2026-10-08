@@ -248,16 +248,6 @@ export function StarterLibrary({
               <DialogTitle className="text-2xl">{detail.title}</DialogTitle>
               <DialogDescription className="leading-6">{detail.description}</DialogDescription>
             </DialogHeader>
-            {detail.modificationGuide && (
-              <div className="rounded-lg border border-white/10 bg-black/20 p-4">
-                <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40">
-                  Common changes and gotchas
-                </div>
-                <p className="whitespace-pre-wrap text-sm leading-6 text-white/70">
-                  {detail.modificationGuide}
-                </p>
-              </div>
-            )}
             <DialogFooter>
               <Button onClick={() => void start(detail.id)} disabled={starting === detail.id}>
                 {starting === detail.id ? 'Creating…' : 'Create derivative'}
