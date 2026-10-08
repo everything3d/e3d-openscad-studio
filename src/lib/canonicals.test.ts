@@ -6,6 +6,7 @@ import {
   publishCanonicalVersionSchema,
   updateCanonicalSchema,
 } from './canonicals'
+import { PLACEHOLDER_PROJECT_NAME, provisionalNameBase } from './types'
 
 describe('canonical domain helpers', () => {
   it('builds a clean workspace seed without conversation data', () => {
@@ -22,6 +23,19 @@ describe('canonical domain helpers', () => {
       canonicalVersionId: 'version-3',
     })
     expect(seed).not.toHaveProperty('messages')
+  })
+
+  it('keeps derivative names provisional until the first message names them', () => {
+    const { name } = buildCanonicalProjectSeed({
+      id: 'starter-1',
+      title: 'Figurine Display Base',
+      versionId: 'version-1',
+      code: '',
+    })
+    expect(provisionalNameBase(name)).toBe('Figurine Display Base')
+    expect(provisionalNameBase(PLACEHOLDER_PROJECT_NAME)).toBe('')
+    expect(provisionalNameBase('Dr Himani Sharma Display Base')).toBeNull()
+    expect(provisionalNameBase(' — new')).toBeNull()
   })
 
   it('accepts bounded JPEG/WebP thumbnails and rejects other data', () => {

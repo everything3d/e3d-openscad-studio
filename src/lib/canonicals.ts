@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { z } from 'zod'
-import { CANONICAL_LIMITS } from './types'
+import { CANONICAL_LIMITS, provisionalDerivativeName } from './types'
 
 const optionalText = (limit: number) =>
   z
@@ -65,7 +65,7 @@ export function buildCanonicalProjectSeed({
   code: string
 }) {
   return {
-    name: `${title} — new`,
+    name: provisionalDerivativeName(title),
     code,
     canonicalDesignId: id,
     canonicalVersionId: versionId,

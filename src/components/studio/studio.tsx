@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { useRenderer } from '@/lib/openscad/useRenderer'
 import { meshTo3MF } from '@/lib/openscad/threemf'
 import {
-  PLACEHOLDER_PROJECT_NAME,
+  provisionalNameBase,
   type CanonicalDetail,
   type CanonicalSummary,
   type FullProject,
@@ -368,7 +368,7 @@ export function Studio({
                 onCode={handleAgentCode}
                 onTurnFinish={() => void refreshList()}
                 onFirstMessage={(text) => {
-                  if (project.name === PLACEHOLDER_PROJECT_NAME) {
+                  if (provisionalNameBase(project.name) !== null) {
                     void nameProject(project.id, text)
                   }
                 }}
