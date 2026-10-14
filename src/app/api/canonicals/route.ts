@@ -7,7 +7,7 @@ export async function GET(req: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const q = new URL(req.url).searchParams.get('q')?.trim()
-  if (q) return NextResponse.json({ ids: await searchCanonicals(q.slice(0, 200)) })
+  if (q) return NextResponse.json({ ids: await searchCanonicals(q.slice(0, 200), userId) })
   return NextResponse.json(await listCanonicals(userId))
 }
 

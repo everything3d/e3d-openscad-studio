@@ -19,7 +19,7 @@ export async function GET(req: Request, { params }: Params) {
 
   const { id } = await params
   const versionId = new URL(req.url).searchParams.get('v')
-  const thumbnail = await getCanonicalThumbnail(id, versionId)
+  const thumbnail = await getCanonicalThumbnail(id, versionId, userId)
   if (!thumbnail) return new Response(null, { status: 404 })
 
   const match = thumbnail.match(/^data:(image\/(?:jpeg|webp|png));base64,(.+)$/)

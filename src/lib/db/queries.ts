@@ -424,8 +424,21 @@ function thumbnailUrl(design: CanonicalDesignRecord, thumbnail: string | null): 
   return `/api/canonicals/${encodeURIComponent(design.id)}/thumbnail?v=${encodeURIComponent(design.currentVersionId)}`
 }
 
-/** The raw stored thumbnail (a data URL for published designs) of a live canonical's current version. */
-export async function getCanonicalThumbnail(id: string, versionId: string | null): Promise<string | null> {
+/**
+ * Canonicals a user can see: every live one, plus their own archived ones.
+ * Archiving takes a design out of the shared library, not away from its
+ * owner, so it stays in their "Yours" shelf and can still be started from.
+ */
+function canonicalVisibleTo(userId: string) {
+  return or(isNull(canonicalDesigns.archivedAt), eq(canonicalDesigns.ownerId, userId))
+}
+
+/** The raw stored thumbnail (a data URL for published designs) of a visible canonical's current version. */
+export async function getCanonicalThumbnail(
+  id: string,
+  versionId: string | null,
+  userId: string,
+): Promise<string | null> {
   const [row] = await db
     .select({ thumbnail: canonicalVersions.thumbnail })
     .from(canonicalDesigns)
@@ -436,7 +449,7 @@ export async function getCanonicalThumbnail(id: string, versionId: string | null
         eq(canonicalVersions.id, versionId ?? canonicalDesigns.currentVersionId),
       ),
     )
-    .where(and(eq(canonicalDesigns.id, id), isNull(canonicalDesigns.archivedAt)))
+    .where(and(eq(canonicalDesigns.id, id), canonicalVisibleTo(userId)))
   return row?.thumbnail ?? null
 }
 
@@ -455,6 +468,7 @@ function toCanonicalSummary(
     thumbnail: thumbnailUrl(design, version.thumbnail),
     fileCount: version.fileCount,
     isOwner: design.ownerId === userId,
+    isPrivate: design.archivedAt !== null,
     updatedAt: design.updatedAt.getTime(),
   }
 }
@@ -662,7 +676,7 @@ export async function listCanonicals(userId: string): Promise<CanonicalSummary[]
     })
     .from(canonicalDesigns)
     .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
-    .where(isNull(canonicalDesigns.archivedAt))
+    .where(canonicalVisibleTo(userId))
     .orderBy(desc(canonicalDesigns.updatedAt))
   // The starters are seeded in one transaction, so they all share a timestamp
   // and cannot be ordered by it. Present them first, in the order they are
@@ -680,10 +694,10 @@ export async function listCanonicals(userId: string): Promise<CanonicalSummary[]
 }
 
 /**
- * Ids of live canonicals whose metadata or current version (source, guide,
+ * Ids of canonicals visible to the user whose metadata or current version (source, guide,
  * file names) contains `query`. File contents are base64 and not searched.
  */
-export async function searchCanonicals(query: string): Promise<string[]> {
+export async function searchCanonicals(query: string, userId: string): Promise<string[]> {
   await ensureBuiltInCanonicals()
   const pattern = containsPattern(query)
   const rows = await db
@@ -692,7 +706,7 @@ export async function searchCanonicals(query: string): Promise<string[]> {
     .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
     .where(
       and(
-        isNull(canonicalDesigns.archivedAt),
+        canonicalVisibleTo(userId),
         sql`(${canonicalDesigns.title} ilike ${pattern}
           or ${canonicalDesigns.description} ilike ${pattern}
           or ${canonicalDesigns.category} ilike ${pattern}
@@ -713,7 +727,7 @@ export async function getCanonical(id: string, userId: string): Promise<Canonica
     .select({ design: canonicalDesigns, version: canonicalVersions })
     .from(canonicalDesigns)
     .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
-    .where(and(eq(canonicalDesigns.id, id), isNull(canonicalDesigns.archivedAt)))
+    .where(and(eq(canonicalDesigns.id, id), canonicalVisibleTo(userId)))
   return row ? toCanonicalDetail(row.design, row.version, userId) : null
 }
 
@@ -844,7 +858,7 @@ export async function startCanonical(id: string, userId: string): Promise<FullPr
       .select({ design: canonicalDesigns, version: canonicalVersions })
       .from(canonicalDesigns)
       .innerJoin(canonicalVersions, eq(canonicalVersions.id, canonicalDesigns.currentVersionId))
-      .where(and(eq(canonicalDesigns.id, id), isNull(canonicalDesigns.archivedAt)))
+      .where(and(eq(canonicalDesigns.id, id), canonicalVisibleTo(userId)))
     if (!row) return null
     const newId = generateId()
     await tx.insert(projects).values({

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { BoxIcon, Clock3Icon, FileCode2Icon, SearchIcon, SparklesIcon } from 'lucide-react'
+import { BoxIcon, Clock3Icon, FileCode2Icon, LockIcon, SearchIcon, SparklesIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -32,6 +32,42 @@ function StarterArtwork({ starter }: { starter: CanonicalSummary }) {
       <div className="absolute inset-0 bg-[linear-gradient(rgba(110,155,255,.07)_1px,transparent_1px),linear-gradient(90deg,rgba(110,155,255,.07)_1px,transparent_1px)] bg-[size:24px_24px]" />
       <BoxIcon className="relative size-16 stroke-[1] text-[#6e9bff]/70" />
     </div>
+  )
+}
+
+function StarterCard({
+  starter,
+  loading,
+  onOpen,
+}: {
+  starter: CanonicalSummary
+  loading: boolean
+  onOpen: () => void
+}) {
+  return (
+    <button
+      onClick={onOpen}
+      className="group overflow-hidden rounded-xl border border-white/10 bg-[#1a1e24] text-left transition hover:-translate-y-0.5 hover:border-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6e9bff] motion-reduce:transform-none"
+    >
+      <div className="h-44 overflow-hidden border-b border-white/10">
+        <div className="h-full transition duration-300 group-hover:scale-[1.025] motion-reduce:transform-none">
+          <StarterArtwork starter={starter} />
+        </div>
+      </div>
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="truncate text-base font-medium">{starter.title}</div>
+          {loading && <span className="text-xs text-white/40">Loading…</span>}
+        </div>
+        <p className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-white/45">
+          {starter.description}
+        </p>
+        <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40">
+          <span>Canonical · v{starter.versionNumber}</span>
+          <span>{starter.fileCount} files</span>
+        </div>
+      </div>
+    </button>
   )
 }
 
@@ -85,6 +121,8 @@ export function StarterLibrary({
         ),
     )
   }, [canonicals, trimmed, matches])
+  const shared = filtered.filter((item) => !item.isPrivate)
+  const yours = filtered.filter((item) => item.isPrivate)
 
   const openDetail = async (id: string) => {
     setLoadingDetail(id)
@@ -166,33 +204,13 @@ export function StarterLibrary({
               </div>
             </button>
 
-            {filtered.map((starter) => (
-              <button
+            {shared.map((starter) => (
+              <StarterCard
                 key={starter.id}
-                onClick={() => void openDetail(starter.id)}
-                className="group overflow-hidden rounded-xl border border-white/10 bg-[#1a1e24] text-left transition hover:-translate-y-0.5 hover:border-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6e9bff] motion-reduce:transform-none"
-              >
-                <div className="h-44 overflow-hidden border-b border-white/10">
-                  <div className="h-full transition duration-300 group-hover:scale-[1.025] motion-reduce:transform-none">
-                    <StarterArtwork starter={starter} />
-                  </div>
-                </div>
-                <div className="p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="truncate text-base font-medium">{starter.title}</div>
-                    {loadingDetail === starter.id && (
-                      <span className="text-xs text-white/40">Loading…</span>
-                    )}
-                  </div>
-                  <p className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-white/45">
-                    {starter.description}
-                  </p>
-                  <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-white/40">
-                    <span>Canonical · v{starter.versionNumber}</span>
-                    <span>{starter.fileCount} files</span>
-                  </div>
-                </div>
-              </button>
+                starter={starter}
+                loading={loadingDetail === starter.id}
+                onOpen={() => void openDetail(starter.id)}
+              />
             ))}
           </div>
 
@@ -202,6 +220,32 @@ export function StarterLibrary({
             </div>
           )}
         </section>
+
+        {yours.length > 0 && (
+          <section className="border-t border-white/10 py-8">
+            <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <div className="flex items-center gap-2">
+                <LockIcon className="size-4 text-white/40" />
+                <h2 className="text-sm font-medium uppercase tracking-[0.14em] text-white/65">
+                  Yours
+                </h2>
+              </div>
+              <p className="text-xs text-white/40">
+                Archived from the shared library. Only you can see these.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {yours.map((starter) => (
+                <StarterCard
+                  key={starter.id}
+                  starter={starter}
+                  loading={loadingDetail === starter.id}
+                  onOpen={() => void openDetail(starter.id)}
+                />
+              ))}
+            </div>
+          </section>
+        )}
 
         {projects.length > 0 && (
           <section className="border-t border-white/10 pt-8">

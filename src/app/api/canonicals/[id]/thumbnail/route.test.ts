@@ -13,13 +13,13 @@ describe('canonical thumbnail caching', () => {
   })
   it('serves the requested immutable version rather than silently substituting the current version', async () => {
     const response = await GET(new Request('http://localhost/api/canonicals/design-1/thumbnail?v=old-version'), context)
-    expect(mocks.getCanonicalThumbnail).toHaveBeenCalledWith('design-1', 'old-version')
+    expect(mocks.getCanonicalThumbnail).toHaveBeenCalledWith('design-1', 'old-version', expect.any(String))
     expect(response.headers.get('Cache-Control')).toContain('immutable')
     expect(await response.text()).toBe('hello')
   })
   it('revalidates URLs without a version', async () => {
     const response = await GET(new Request('http://localhost/api/canonicals/design-1/thumbnail'), context)
-    expect(mocks.getCanonicalThumbnail).toHaveBeenCalledWith('design-1', null)
+    expect(mocks.getCanonicalThumbnail).toHaveBeenCalledWith('design-1', null, expect.any(String))
     expect(response.headers.get('Cache-Control')).toBe('private, no-cache')
   })
   it('requires authentication', async () => {
