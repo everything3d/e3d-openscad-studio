@@ -2,6 +2,7 @@ import { zipSync, strToU8 } from 'fflate'
 import type { ParsedMesh } from './off'
 
 const MATERIAL_NS = 'http://schemas.microsoft.com/3dmanufacturing/material/2015/02'
+const SLIC3RPE_NS = 'http://schemas.slic3r.org/3mf/2017/06'
 
 /**
  * Build a minimal, spec-compliant 3MF file from a parsed mesh.
@@ -23,7 +24,23 @@ const MATERIAL_NS = 'http://schemas.microsoft.com/3dmanufacturing/material/2015/
  *    `parseOFF` guarantees this by filling uncolored faces with
  *    DEFAULT_FACE_COLOR whenever any face in the file is colored.
  *  - p1/p2/p3 are written equal so the face reads as flat, not as a gradient.
+ *
+ * Orca forks (Snapmaker Orca for the U1, OrcaSlicer) ignore the color group on
+ * import, so each triangle is also tagged with multi-material paint data: the
+ * Nth distinct color is painted with filament N. Those slicers read it as
+ * `paint_color`, PrusaSlicer as `slic3rpe:mmu_segmentation`.
  */
+/**
+ * Encode "whole triangle painted with filament `state`" in the TriangleSelector
+ * serialization PrusaSlicer/Bambu/Orca use: a bitstream (2 bits split count =
+ * 0, then the state: 2 bits if < 3, else `11` + 4 bits of state-3), written as
+ * hex nibbles in reverse order. Gives "4", "8", "0C", "1C", … for 1, 2, 3, 4.
+ */
+function paintState(state: number): string {
+  if (state < 3) return (state << 2).toString(16).toUpperCase()
+  return (state - 3).toString(16).toUpperCase() + 'C'
+}
+
 export function meshTo3MF(mesh: ParsedMesh): Uint8Array {
   const triCount = mesh.triangles.length / 3
 
@@ -57,7 +74,7 @@ export function meshTo3MF(mesh: ParsedMesh): Uint8Array {
   xml.push('<?xml version="1.0" encoding="UTF-8"?>')
   xml.push(
     '<model unit="millimeter" xml:lang="en-US" ' +
-      (hasColors ? `xmlns:m="${MATERIAL_NS}" ` : '') +
+      (hasColors ? `xmlns:m="${MATERIAL_NS}" xmlns:slic3rpe="${SLIC3RPE_NS}" ` : '') +
       'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">',
   )
   xml.push(' <resources>')
@@ -94,9 +111,11 @@ export function meshTo3MF(mesh: ParsedMesh): Uint8Array {
     const c = tr[t * 3 + 2]
     if (hasColors) {
       const ci = triColor[t]
+      const paint = paintState(ci + 1)
       xml.push(
         `     <triangle v1="${a}" v2="${b}" v3="${c}" ` +
-          `pid="1" p1="${ci}" p2="${ci}" p3="${ci}" />`,
+          `pid="1" p1="${ci}" p2="${ci}" p3="${ci}" ` +
+          `paint_color="${paint}" slic3rpe:mmu_segmentation="${paint}" />`,
       )
     } else {
       xml.push(`     <triangle v1="${a}" v2="${b}" v3="${c}" />`)
