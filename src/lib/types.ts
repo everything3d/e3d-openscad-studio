@@ -50,6 +50,8 @@ export interface CanonicalSummary {
   thumbnail: string | null
   fileCount: number
   isOwner: boolean
+  /** Archived out of the shared library; only its owner still sees it. */
+  isPrivate: boolean
   updatedAt: number
 }
 
