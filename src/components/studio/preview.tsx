@@ -3,15 +3,25 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { DownloadIcon } from 'lucide-react'
+import { ChevronDownIcon, DownloadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { RenderState } from '@/lib/openscad/useRenderer'
 import { addLights, createModelMesh, PREVIEW_BACKGROUND } from './scene'
 
+/** STL, or a 3MF laid out for the slicer that will open it. */
+export type ExportFormat = 'stl' | '3mf-bambu' | '3mf-snapmaker-u1'
+
 interface Props {
   render: RenderState
-  onExport: (format: 'stl' | '3mf') => void
+  onExport: (format: ExportFormat) => void
   /** Opens the order dialog; omitted where ordering does not apply. */
   onOrder?: () => void
   onThumbnailReady?: (thumbnail: string | null) => void
@@ -224,15 +234,23 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
         >
           <DownloadIcon className="size-3.5" /> STL
         </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={!render.mesh}
-          onClick={() => onExport('3mf')}
-          title="Download as 3MF (keeps colors)"
-        >
-          <DownloadIcon className="size-3.5" /> 3MF
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            disabled={!render.mesh}
+            title="Download as 3MF (keeps colors)"
+            render={<Button variant="secondary" size="sm" />}
+          >
+            <DownloadIcon className="size-3.5" /> 3MF
+            <ChevronDownIcon className="size-3.5 opacity-60" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-auto min-w-44">
+            <DropdownMenuLabel>Open in</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => onExport('3mf-bambu')}>Bambu Studio</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onExport('3mf-snapmaker-u1')}>
+              Snapmaker U1
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <span
           className={cn(
             'rounded-full px-2.5 py-1 text-xs font-medium',

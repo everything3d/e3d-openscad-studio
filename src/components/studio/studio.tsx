@@ -8,7 +8,8 @@ import { Maximize2Icon, MenuIcon, Minimize2Icon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useRenderer } from '@/lib/openscad/useRenderer'
-import { meshTo3MF } from '@/lib/openscad/threemf'
+import { meshTo3MF, meshToSnapmakerU1Project } from '@/lib/openscad/threemf'
+import type { ExportFormat } from './preview'
 import {
   provisionalNameBase,
   type CanonicalDetail,
@@ -205,22 +206,33 @@ export function Studio({
 
   // ---- export ----------------------------------------------------------------
   const handleExport = useCallback(
-    async (format: 'stl' | '3mf') => {
+    async (format: ExportFormat) => {
       if (!project) return
+      const baseName = project.name.replace(/[^\w.-]+/g, '_').slice(0, 60) || 'model'
       let bytes: BlobPart
+      let fileName: string
       if (format === 'stl') {
         // Fresh render in binary STL (colors are not part of the STL format).
         bytes = await exportModel(project.code, project.files, 'binstl')
+        fileName = `${baseName}.stl`
       } else {
         // 3MF is written client-side from the already-rendered colored mesh.
+        // The slicers read colors differently, so each gets its own file and
+        // the target is part of the name.
         if (!renderState.mesh) return
-        bytes = meshTo3MF(renderState.mesh) as BlobPart
+        if (format === '3mf-snapmaker-u1') {
+          bytes = meshToSnapmakerU1Project(renderState.mesh, project.name) as BlobPart
+          fileName = `${baseName}_snapmaker-u1.3mf`
+        } else {
+          bytes = meshTo3MF(renderState.mesh) as BlobPart
+          fileName = `${baseName}_bambu.3mf`
+        }
       }
       const blob = new Blob([bytes], { type: 'application/octet-stream' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${project.name.replace(/[^\w.-]+/g, '_').slice(0, 60) || 'model'}.${format}`
+      a.download = fileName
       a.click()
       URL.revokeObjectURL(url)
     },
