@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
@@ -244,11 +245,14 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder }: Props) 
             <ChevronDownIcon className="size-3.5 opacity-60" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-auto min-w-44">
-            <DropdownMenuLabel>Open in</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => onExport('3mf-bambu')}>Bambu Studio</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onExport('3mf-snapmaker-u1')}>
-              Snapmaker U1
-            </DropdownMenuItem>
+            {/* Base UI throws if a group label renders outside a group. */}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Open in</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => onExport('3mf-bambu')}>Bambu Studio</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onExport('3mf-snapmaker-u1')}>
+                Snapmaker U1
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
         <span
