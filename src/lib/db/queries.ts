@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import { generateId, type UIMessage } from 'ai'
 import { db } from '.'
+import { storedBlobSize, withDownloadUrls } from '../blob'
 import { buildCanonicalProjectSeed } from '../canonicals'
 import {
   BUILT_IN_CANONICALS,
@@ -19,6 +20,7 @@ import {
   projectShares,
   workspaceFiles,
 } from './schema'
+import { fileFromRow, fileIdentity, fileToRow, planFileReplacement } from './file-rows'
 import {
   DEFAULT_CODE,
   PLACEHOLDER_PROJECT_NAME,
@@ -66,12 +68,7 @@ async function loadProjectArtifacts(
     sourceId: project.id,
     name: project.name,
     code: project.code,
-    files: fileRows.map((row) => ({
-      name: row.name,
-      data: row.data,
-      size: row.size,
-      addedAt: row.addedAt.getTime(),
-    })),
+    files: fileRows.map(fileFromRow),
     canonicalDesignId: project.canonicalDesignId,
     canonicalVersionId: project.canonicalVersionId,
   }
@@ -173,15 +170,7 @@ async function materializeProjectCopy(
     )
   }
   if (snapshot.files.length) {
-    await tx.insert(workspaceFiles).values(
-      snapshot.files.map((file) => ({
-        projectId: id,
-        name: file.name,
-        data: file.data,
-        size: file.size,
-        addedAt: new Date(file.addedAt),
-      })),
-    )
+    await tx.insert(workspaceFiles).values(snapshot.files.map((file) => fileToRow(id, file)))
   }
 
   return id
@@ -291,12 +280,7 @@ export async function getProject(id: string, userId: string): Promise<FullProjec
     canonicalTitle,
     canonicalVersionNumber,
     canonicalHasNewerVersion,
-    files: files.map((f) => ({
-      name: f.name,
-      data: f.data,
-      size: f.size,
-      addedAt: f.addedAt.getTime(),
-    })),
+    files: await withDownloadUrls(files.map(fileFromRow)),
     createdAt: project.createdAt.getTime(),
     updatedAt: project.updatedAt.getTime(),
   }
@@ -873,15 +857,7 @@ export async function startCanonical(id: string, userId: string): Promise<FullPr
     })
     const files = row.version.files as WorkspaceFile[]
     if (files.length) {
-      await tx.insert(workspaceFiles).values(
-        files.map((file) => ({
-          projectId: newId,
-          name: file.name,
-          data: file.data,
-          size: file.size,
-          addedAt: new Date(file.addedAt),
-        })),
-      )
+      await tx.insert(workspaceFiles).values(files.map((file) => fileToRow(newId, file)))
     }
     return newId
   })
@@ -959,7 +935,9 @@ function sameDesign(a: Pick<ProjectArtifacts, 'code' | 'files'>, b: Pick<Project
   return (
     a.code === b.code &&
     a.files.length === b.files.length &&
-    a.files.every((file, i) => file.name === b.files[i].name && file.data === b.files[i].data)
+    a.files.every(
+      (file, i) => file.name === b.files[i].name && fileIdentity(file) === fileIdentity(b.files[i]),
+    )
   )
 }
 
@@ -1089,26 +1067,54 @@ export async function deleteProject(id: string, userId: string): Promise<void> {
   await db.delete(projects).where(and(eq(projects.id, id), eq(projects.userId, userId)))
 }
 
-/** Replace the full workspace file list for a project. */
-export async function replaceFiles(id: string, files: WorkspaceFile[]): Promise<void> {
+export async function ownsProject(id: string, userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.id, id), eq(projects.userId, userId)))
+  return Boolean(row)
+}
+
+/** A project's workspace files with fresh download URLs, or null when it isn't the user's. */
+export async function listProjectFiles(id: string, userId: string): Promise<WorkspaceFile[] | null> {
+  if (!(await ownsProject(id, userId))) return null
+  const rows = await db
+    .select()
+    .from(workspaceFiles)
+    .where(eq(workspaceFiles.projectId, id))
+    .orderBy(asc(workspaceFiles.addedAt))
+  return withDownloadUrls(rows.map(fileFromRow))
+}
+
+export type ReplaceFilesResult = { ok: true } | { ok: false; status: 400 | 404; error: string }
+
+/** Replace a project's workspace file list; see `planFileReplacement` for what's accepted. */
+export async function replaceFiles(
+  id: string,
+  userId: string,
+  incoming: WorkspaceFile[],
+): Promise<ReplaceFilesResult> {
+  if (!(await ownsProject(id, userId))) return { ok: false, status: 404, error: 'Project not found' }
+
+  const existing = await db.select().from(workspaceFiles).where(eq(workspaceFiles.projectId, id))
+  const plan = await planFileReplacement({
+    projectId: id,
+    userId,
+    existing,
+    incoming,
+    storedSize: storedBlobSize,
+  })
+  if (!plan.ok) return { ok: false, status: 400, error: plan.error }
+
   await db.transaction(async (tx) => {
     await tx.delete(workspaceFiles).where(eq(workspaceFiles.projectId, id))
-    if (files.length) {
-      await tx.insert(workspaceFiles).values(
-        files.map((f) => ({
-          projectId: id,
-          name: f.name,
-          data: f.data,
-          size: f.size,
-          addedAt: new Date(f.addedAt),
-        })),
-      )
-    }
+    if (plan.rows.length) await tx.insert(workspaceFiles).values(plan.rows)
     await tx
       .update(projects)
       .set({ updatedAt: sql`now()` })
       .where(eq(projects.id, id))
   })
+  return { ok: true }
 }
 
 /**
