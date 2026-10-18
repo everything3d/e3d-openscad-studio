@@ -69,18 +69,22 @@ export async function guardModelCall(userId: string): Promise<SpendGuardVerdict>
   const dayStart = new Date(now - DAY_MS)
   const minuteStart = new Date(now - MINUTE_MS)
 
+  // Built with `gte` so the column encodes the Date as an ISO string. A Date
+  // interpolated straight into `sql` reaches postgres-js raw, and Drizzle
+  // switches off postgres-js's own timestamp serialiser, so the query throws
+  // before it is sent — and the guard fails open on every call.
+  const inMinute = gte(modelCalls.createdAt, minuteStart)
+
   try {
     // One indexed scan over this user's recent rows answers both windows.
     const [counts] = await db
       .select({
         day: sql<number>`count(*)`.mapWith(Number),
-        minute: sql<number>`count(*) filter (where ${modelCalls.createdAt} >= ${minuteStart})`.mapWith(
-          Number,
+        minute: sql<number>`count(*) filter (where ${inMinute})`.mapWith(Number),
+        oldestInDay: sql<Date | null>`min(${modelCalls.createdAt})`.mapWith(modelCalls.createdAt),
+        oldestInMinute: sql<Date | null>`min(${modelCalls.createdAt}) filter (where ${inMinute})`.mapWith(
+          modelCalls.createdAt,
         ),
-        oldestInDay: sql<Date | null>`min(${modelCalls.createdAt})`,
-        oldestInMinute: sql<
-          Date | null
-        >`min(${modelCalls.createdAt}) filter (where ${modelCalls.createdAt} >= ${minuteStart})`,
       })
       .from(modelCalls)
       .where(and(eq(modelCalls.userId, userId), gte(modelCalls.createdAt, dayStart)))
