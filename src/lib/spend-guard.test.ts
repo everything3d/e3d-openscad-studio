@@ -14,7 +14,13 @@ vi.mock('./db', () => ({
   },
 }))
 
+import type { SQL } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/postgres-js'
+import * as schema from './db/schema'
 import { guardModelCall, spendGuardMessage, spendGuardTextResponse } from './spend-guard'
+
+/** The real postgres-js dialect, never connected: it only compiles queries. */
+const compiler = drizzle.mock({ schema })
 
 /** Stand in for the single aggregate row the guard reads. */
 function counts(row: {
@@ -106,6 +112,40 @@ describe('guardModelCall', () => {
     process.env.MODEL_CALLS_PER_DAY = 'not-a-number'
     counts({ day: 500, minute: 1, oldestInDay: new Date() })
     expect((await guardModelCall('user_1')).allowed).toBe(false)
+  })
+
+  it('binds no raw Date that postgres-js would refuse to send', async () => {
+    // Drizzle replaces postgres-js's timestamp serialiser with a pass-through,
+    // so a Date bound outside a column comparison throws ERR_INVALID_ARG_TYPE
+    // before the query leaves the process. The guard then fails open on every
+    // call and records nothing, which mocked rows alone cannot reveal.
+    const compiled: { sql: string; params: unknown[] }[] = []
+    mocks.select.mockImplementation((fields) => ({
+      from: (table: typeof schema.modelCalls) => ({
+        where: (condition: SQL) => {
+          compiled.push(compiler.select(fields).from(table).where(condition).toSQL())
+          return Promise.resolve([{ day: 50, minute: 1, oldestInDay: null, oldestInMinute: null }])
+        },
+      }),
+    }))
+    mocks.delete.mockImplementation((table: typeof schema.modelCalls) => ({
+      where: (condition: SQL) => {
+        compiled.push(compiler.delete(table).where(condition).toSQL())
+        return Promise.resolve()
+      },
+    }))
+
+    const error = vi.spyOn(console, 'error')
+    expect((await guardModelCall('user_1')).allowed).toBe(true)
+    expect(error).not.toHaveBeenCalled()
+    error.mockRestore()
+
+    // The usage read and the prune (day is a multiple of 50) both compiled.
+    expect(compiled).toHaveLength(2)
+    for (const query of compiled) {
+      expect(query.params.filter((param) => param instanceof Date)).toEqual([])
+    }
+    expect(mocks.insert).toHaveBeenCalledOnce()
   })
 
   it('fails open when the counter table is unreachable', async () => {
