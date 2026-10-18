@@ -7,6 +7,7 @@ import { UserButton } from '@clerk/nextjs'
 import { Maximize2Icon, MenuIcon, Minimize2Icon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { toFileRef } from '@/lib/files'
 import { useRenderer } from '@/lib/openscad/useRenderer'
 import { meshTo3MF, meshToSnapmakerU1Project } from '@/lib/openscad/threemf'
 import type { ExportFormat } from './preview'
@@ -192,17 +193,39 @@ export function Studio({
     setRightTab('preview')
   }, [])
 
-  const handleFilesChange = useCallback((files: WorkspaceFile[]) => {
-    setProject((p) => {
-      if (!p) return p
-      void fetch(`/api/projects/${p.id}/files`, {
+  /** The open project as of the last change, for file saves that must start from the latest list. */
+  const projectRef = useRef(project)
+  useEffect(() => {
+    projectRef.current = project
+  }, [project])
+
+  /**
+   * Apply a file list change and save it. The list holds references only (the
+   * bytes are already in Blob storage); a rejected save restores the previous
+   * list and rejects, so the panel can say why.
+   */
+  const handleFilesChange = useCallback(
+    async (update: (files: WorkspaceFile[]) => WorkspaceFile[]) => {
+      const current = projectRef.current
+      if (!current) return
+      const previous = current.files
+      const files = update(previous)
+      projectRef.current = { ...current, files }
+      setProject((p) => (p && p.id === current.id ? { ...p, files } : p))
+
+      const res = await fetch(`/api/projects/${current.id}/files`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files }),
-      })
-      return { ...p, files }
-    })
-  }, [])
+        body: JSON.stringify({ files: files.map(toFileRef) }),
+      }).catch(() => null)
+      if (res?.ok) return
+
+      setProject((p) => (p && p.id === current.id && p.files === files ? { ...p, files: previous } : p))
+      const body = (await res?.json().catch(() => null)) as { error?: string } | null
+      throw new Error(body?.error ?? 'Couldn’t save the file list. Check your connection and try again.')
+    },
+    [],
+  )
 
   // ---- export ----------------------------------------------------------------
   const handleExport = useCallback(
@@ -476,7 +499,12 @@ export function Studio({
               </div>
               <div className={cn('absolute inset-0', rightTab !== 'files' && 'hidden')}>
                 {project && (
-                  <WorkspacePanel files={project.files} onChange={handleFilesChange} />
+                  <WorkspacePanel
+                    key={project.id}
+                    projectId={project.id}
+                    files={project.files}
+                    onChange={handleFilesChange}
+                  />
                 )}
               </div>
             </div>

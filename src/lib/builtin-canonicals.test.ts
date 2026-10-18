@@ -124,7 +124,7 @@ describe('built-in canonical catalog', () => {
     const files = builtInWorkspaceFiles(starter)
     expect(files.map((f) => f.addedAt)).toEqual([0, 1])
     for (const [i, file] of files.entries()) {
-      expect(Buffer.from(file.data, 'base64').toString('utf8')).toBe(starter.files![i].text)
+      expect(Buffer.from(file.data!, 'base64').toString('utf8')).toBe(starter.files![i].text)
       expect(file.size).toBe(Buffer.byteLength(starter.files![i].text))
     }
     expect(builtInWorkspaceFiles(byId('builtin-name-keychain'))).toEqual([])

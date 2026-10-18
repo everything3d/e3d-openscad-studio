@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm'
 import {
   bigserial,
+  check,
   index,
   integer,
   jsonb,
@@ -101,8 +103,9 @@ export const messages = pgTable(
 
 /**
  * Files available to `import()` / `use <>` during rendering (SVG, DXF, STL,
- * .scad libraries, …). `data` is base64 so it round-trips through JSON to
- * the browser and the wasm worker.
+ * .scad libraries, …). Uploaded bytes live in the private Blob store at
+ * `blob_path`; `data` holds base64 bytes for built-in starter files and for
+ * rows saved before Blob storage.
  */
 export const workspaceFiles = pgTable(
   'workspace_files',
@@ -111,11 +114,16 @@ export const workspaceFiles = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
-    data: text('data').notNull(),
+    data: text('data'),
+    blobPath: text('blob_path'),
+    sha256: text('sha256'),
     size: integer('size').notNull(),
     addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.projectId, t.name] })],
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.name] }),
+    check('workspace_files_has_bytes', sql`${t.data} is not null or ${t.blobPath} is not null`),
+  ],
 )
 
 /**

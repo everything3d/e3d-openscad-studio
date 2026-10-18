@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { WorkspaceFile } from '@/lib/types'
-import { base64ToBytes } from '@/lib/files'
+import { fileBytesNow, hasFileBytesNow, loadFileBytes } from '@/lib/workspace-files'
 import type { ParsedMesh } from './off'
 import type { ExportFormat, WorkerRequest, WorkerResponse } from './render.worker'
 
@@ -23,11 +23,24 @@ interface Pending {
  */
 const JOB_TIMEOUT_MS = 90_000
 
-function toPayload(files: WorkspaceFile[]) {
-  return files.map((f) => ({
-    name: f.name,
-    data: base64ToBytes(f.data).buffer as ArrayBuffer,
-  }))
+type RenderPayload = { name: string; data: ArrayBuffer }[]
+
+/** A copy, so transferring it to the worker leaves the cached bytes intact. */
+function ownBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.slice().buffer as ArrayBuffer
+}
+
+/** The worker payload, when every file's bytes are already loaded. */
+function payloadNow(files: WorkspaceFile[]): RenderPayload | null {
+  if (!files.every(hasFileBytesNow)) return null
+  return files.map((f) => ({ name: f.name, data: ownBuffer(fileBytesNow(f)) }))
+}
+
+/** The worker payload, downloading any Blob-stored files not loaded yet. */
+async function loadPayload(files: WorkspaceFile[]): Promise<RenderPayload> {
+  return Promise.all(
+    files.map(async (f) => ({ name: f.name, data: ownBuffer(await loadFileBytes(f)) })),
+  )
 }
 
 /**
@@ -147,11 +160,25 @@ export function useRenderer() {
 
   const render = useCallback(
     (code: string, files: WorkspaceFile[] = []) => {
-      const worker = ensureWorker()
       const id = ++reqId.current
       latest.current = id
       setState((s) => ({ ...s, status: 'rendering', error: null }))
-      postJob(worker, { type: 'render', id, code, files: toPayload(files), format: 'off' })
+      const post = (payload: RenderPayload) =>
+        postJob(ensureWorker(), { type: 'render', id, code, files: payload, format: 'off' })
+
+      const ready = payloadNow(files)
+      if (ready) return post(ready)
+      // Only the newest request matters once the files arrive.
+      loadPayload(files).then(
+        (payload) => {
+          if (id === latest.current) post(payload)
+        },
+        (err: unknown) => {
+          if (id !== latest.current) return
+          const message = err instanceof Error ? err.message : String(err)
+          setState((s) => ({ status: 'error', mesh: s.mesh, error: message, log: '' }))
+        },
+      )
     },
     [ensureWorker, postJob],
   )
@@ -163,12 +190,13 @@ export function useRenderer() {
   }, [])
 
   const exportModel = useCallback(
-    (code: string, files: WorkspaceFile[], format: ExportFormat): Promise<ArrayBuffer> => {
+    async (code: string, files: WorkspaceFile[], format: ExportFormat): Promise<ArrayBuffer> => {
+      const payload = payloadNow(files) ?? (await loadPayload(files))
       const worker = ensureWorker()
       const id = ++reqId.current
       return new Promise((resolve, reject) => {
         pending.current.set(id, { resolve, reject })
-        postJob(worker, { type: 'export', id, code, files: toPayload(files), format })
+        postJob(worker, { type: 'export', id, code, files: payload, format })
       })
     },
     [ensureWorker, postJob],

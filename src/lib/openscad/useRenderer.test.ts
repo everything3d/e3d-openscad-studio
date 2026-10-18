@@ -58,6 +58,32 @@ describe('renderer worker lifecycle', () => {
     renderer.render('cube(2);')
     expect(FakeWorker.instances).toHaveLength(2)
   })
+  it('downloads Blob-stored files before posting a render, copying the bytes it transfers', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2]))))
+    const file = { name: 'part.stl', size: 2, addedAt: 0, sha256: '1'.repeat(64), blobPath: 'workspace/u/1', url: 'https://x' }
+    const renderer = useRenderer()
+    renderer.render('import("part.stl");', [file])
+    expect(FakeWorker.instances).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(0)
+    const [[job, transfer]] = FakeWorker.instances[0].postMessage.mock.calls
+    expect(job.files[0].name).toBe('part.stl')
+    expect(Array.from(new Uint8Array(job.files[0].data))).toEqual([1, 2])
+    expect(transfer).toEqual([job.files[0].data])
+    // The cached bytes survive the transfer, so the next render posts at once.
+    renderer.render('import("part.stl"); // edited', [file])
+    expect(FakeWorker.instances[0].postMessage).toHaveBeenCalledTimes(2)
+  })
+  it('drops a render whose files arrive after a newer edit', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([3]))))
+    const file = { name: 'b.stl', size: 1, addedAt: 0, sha256: '2'.repeat(64), blobPath: 'workspace/u/2', url: 'https://x' }
+    const renderer = useRenderer()
+    renderer.render('import("b.stl");', [file])
+    renderer.render('cube(1);')
+    await vi.advanceTimersByTimeAsync(0)
+    const calls = FakeWorker.instances[0].postMessage.mock.calls
+    expect(calls).toHaveLength(1)
+    expect(calls[0][0].code).toBe('cube(1);')
+  })
   it('rejects exports immediately on worker failure and allows recovery', async () => {
     const renderer = useRenderer()
     const exported = renderer.exportModel('cube(1);', [], 'binstl')

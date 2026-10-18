@@ -104,6 +104,13 @@ npm run db:migrate   # apply migrations
 3. Run migrations against the production database: `POSTGRES_URL=... npm run db:migrate`.
 4. Canonical designs form a shared library for every signed-in user. Their owner
    remains the only account that can edit, version, or archive them.
+5. Add a **private** Blob store and connect it to the project (Storage → Create →
+   Blob, or `vercel blob create-store <name> --access private --yes`). It provisions
+   `BLOB_READ_WRITE_TOKEN`. Workspace files upload straight from the browser to the
+   store (up to 100 MB each, 200 MB per project) and download through short-lived
+   signed URLs, so they never pass through a function's 4.5 MB request limit.
+   Files saved before Blob storage can be moved over with
+   `scripts/backfill-workspace-blobs.mjs` (dry run by default).
 
 ## Canonical and derivative workflow
 

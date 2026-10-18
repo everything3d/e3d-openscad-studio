@@ -1,13 +1,24 @@
 /**
  * A file in a project's workspace (SVG, DXF, STL, .scad library, …).
  * The OpenSCAD code can reference it by name: `import("logo.svg")`.
+ *
+ * Uploaded files live in the private Blob store at a content-addressed
+ * `blobPath`, so copies (forks, shares, starters) share one stored object.
+ * Built-in starter files and rows saved before Blob carry their bytes inline
+ * as base64 `data` instead.
  */
 export interface WorkspaceFile {
   name: string
-  /** File bytes, base64-encoded so they survive JSON. */
-  data: string
   size: number
   addedAt: number
+  /** Hex SHA-256 of the bytes. Set on Blob-stored files. */
+  sha256?: string
+  /** Pathname in the private Blob store. */
+  blobPath?: string
+  /** Inline bytes, base64-encoded. */
+  data?: string
+  /** Short-lived signed download URL for `blobPath`. Added when a project is sent to the browser; never stored. */
+  url?: string
 }
 
 /** Sidebar listing of a project. */
