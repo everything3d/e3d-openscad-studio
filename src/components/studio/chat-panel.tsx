@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import { BoxIcon, ImagePlusIcon } from 'lucide-react'
@@ -27,7 +27,29 @@ import {
 import { downscaleImageDataUrl } from '@/lib/images'
 import { Tool, ToolContent, ToolHeader } from '@/components/ai-elements/tool'
 import { CodeBlock } from '@/components/ai-elements/code-block'
+import { Spinner } from '@/components/ui/spinner'
 import type { StudioUIMessage } from '@/lib/agents/studio-agent'
+
+/**
+ * How long after sending a turn its reply can still be saved. The chat route
+ * keeps the agent running when the browser drops the stream, for at most its
+ * maxDuration (120 s); the slack covers the final save.
+ */
+const TURN_DEADLINE_MS = 120_000 + 15_000
+/** How often to re-read the project while catching up on a dropped turn. */
+const CATCH_UP_POLL_MS = 3_000
+
+/**
+ * fetch reports a dropped or refused connection as a TypeError (Safari words
+ * it "The network connection was lost." or "Load failed"). Errors our server
+ * sends, HTTP failures and the agent's error chunk, arrive as plain Errors.
+ */
+function isConnectionError(error: Error): boolean {
+  return error instanceof TypeError || error.name === 'NetworkError'
+}
+
+/** The turn being caught up on, or 'failed' once it is clear it was never saved. */
+type CatchUp = { userMessageId: string; deadline: number } | 'failed' | null
 
 interface Props {
   projectId: string
@@ -112,15 +134,114 @@ export function ChatPanel({
     [projectId],
   )
 
-  const { messages, sendMessage, status, error } = useChat<StudioUIMessage>({
-    id: projectId,
-    messages: initialMessages,
-    transport,
-    onFinish: onTurnFinish,
-    // Coalesce streamed deltas: without this every token re-renders the whole
-    // message list, which makes typing in the editor stutter while the agent writes.
-    throttle: 50,
+  /**
+   * The turn in flight: when it was sent, whether its reply started arriving,
+   * and whether the page was backgrounded while it ran. Together they tell a
+   * connection that dropped mid-turn from a request that never got through.
+   */
+  const turn = useRef<{ sentAt: number; streamed: boolean; hidden: boolean } | null>(null)
+  const [catchUp, setCatchUp] = useState<CatchUp>(null)
+  const catchingUp = catchUp !== null && catchUp !== 'failed'
+
+  const { messages, setMessages, sendMessage, status, error, clearError } =
+    useChat<StudioUIMessage>({
+      id: projectId,
+      messages: initialMessages,
+      transport,
+      onFinish: ({ isError }) => {
+        if (!isError) turn.current = null
+        onTurnFinish()
+      },
+      // Coalesce streamed deltas: without this every token re-renders the whole
+      // message list, which makes typing in the editor stutter while the agent writes.
+      throttle: 50,
+    })
+
+  useEffect(() => {
+    if (status === 'streaming' && turn.current) turn.current.streamed = true
+  }, [status])
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden' && turn.current) turn.current.hidden = true
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [])
+
+  // Phones suspend background tabs, which drops the stream mid-turn. The
+  // server keeps the turn running and saves it, so once the request is known
+  // to have reached it (the reply had started, or the page was backgrounded
+  // while waiting) catch up from the saved project instead of failing.
+  useEffect(() => {
+    const dropped = turn.current
+    if (status !== 'error' || !error || !dropped) return
+    turn.current = null
+    const userMessage = messages.findLast((m) => m.role === 'user')
+    if (isConnectionError(error) && (dropped.streamed || dropped.hidden) && userMessage) {
+      setCatchUp({ userMessageId: userMessage.id, deadline: dropped.sentAt + TURN_DEADLINE_MS })
+    }
+  }, [status, error, messages])
+
+  const finishCatchUp = useEffectEvent((saved: StudioUIMessage[]) => {
+    setMessages(saved)
+    clearError()
+    setCatchUp(null)
+    onTurnFinish()
   })
+
+  useEffect(() => {
+    if (!catchUp || catchUp === 'failed') return
+    const { userMessageId, deadline } = catchUp
+    let cancelled = false
+    let inFlight = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const check = async () => {
+      // A suspended tab cannot fetch; the visibility listener picks this up again.
+      if (cancelled || inFlight || document.visibilityState === 'hidden') return
+      inFlight = true
+      clearTimeout(timer)
+      let reached = false
+      try {
+        const res = await fetch(`/api/projects/${projectId}`, { cache: 'no-store' })
+        reached = true
+        if (res.ok) {
+          const saved = ((await res.json()) as { messages: StudioUIMessage[] }).messages
+          const at = saved.findIndex((m) => m.id === userMessageId)
+          // The server saves a turn only once the reply is complete, so the
+          // sent message appearing with something after it means it is done.
+          if (!cancelled && at !== -1 && at < saved.length - 1) {
+            finishCatchUp(saved)
+            return
+          }
+        }
+      } catch {
+        // Still offline: no answer either way yet, so keep trying.
+      } finally {
+        inFlight = false
+      }
+      if (cancelled) return
+      // Past the deadline the server can no longer be working on it. Only
+      // give up on an actual answer, so a phone that comes back offline waits.
+      if (reached && Date.now() > deadline) {
+        setCatchUp('failed')
+        return
+      }
+      timer = setTimeout(check, CATCH_UP_POLL_MS)
+    }
+
+    const resume = () => void check()
+    document.addEventListener('visibilitychange', resume)
+    window.addEventListener('online', resume)
+    resume()
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', resume)
+      window.removeEventListener('online', resume)
+    }
+  }, [catchUp, projectId])
 
   // Apply agent-written code to the editor/preview as soon as the tool input
   // has fully streamed in. History that was already applied (anything present
@@ -143,7 +264,12 @@ export function ChatPanel({
 
   const handleSubmit = async (message: PromptInputMessage) => {
     const text = message.text.trim()
-    if ((!text && message.files.length === 0) || status === 'streaming' || status === 'submitted')
+    if (
+      (!text && message.files.length === 0) ||
+      status === 'streaming' ||
+      status === 'submitted' ||
+      catchingUp
+    )
       return
     // Shrink attached images before sending: the full history (including
     // these data URLs) is re-sent every turn and persisted to the DB.
@@ -156,6 +282,12 @@ export function ChatPanel({
     // Opening message: let the parent name the project from it, in parallel
     // with the modeling turn.
     if (messages.length === 0 && text) onFirstMessage(text)
+    setCatchUp(null)
+    turn.current = {
+      sentAt: Date.now(),
+      streamed: false,
+      hidden: document.visibilityState === 'hidden',
+    }
     // Ship the live editor content with the request: manual edits are only
     // persisted after a debounce, so the server's copy may be stale.
     void sendMessage(text ? { text, files } : { files }, { body: { code } })
@@ -242,10 +374,21 @@ export function ChatPanel({
               </MessageContent>
             </Message>
           ))}
-          {error && (
-            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-              {errorText(error)}
+          {catchingUp ? (
+            <div className="flex items-center gap-2 rounded-md border bg-muted/50 p-3 text-sm text-muted-foreground">
+              <Spinner className="shrink-0" />
+              Connection lost. Catching up on the reply…
             </div>
+          ) : catchUp === 'failed' ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              The connection dropped before the reply was saved. Please send your message again.
+            </div>
+          ) : (
+            error && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                {errorText(error)}
+              </div>
+            )
           )}
         </ConversationContent>
         <ConversationScrollButton />
@@ -270,7 +413,7 @@ export function ChatPanel({
           </PromptInputBody>
           <PromptInputFooter className="justify-between">
             <AttachImagesButton />
-            <PromptInputSubmit status={status} />
+            <PromptInputSubmit status={catchingUp ? 'submitted' : status} />
           </PromptInputFooter>
         </PromptInput>
         {attachError && (
