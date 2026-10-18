@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { trackEvent } from '@/lib/analytics'
 
 interface ShareLink {
   path: string
@@ -76,6 +77,7 @@ export function ShareProjectDialog({ projectId }: Props) {
       if (!res.ok) throw new Error('Could not create a share link.')
       const data = (await res.json()) as { share: ShareLink }
       setShare(data.share)
+      trackEvent('share_created', { replaced: replacing })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not create a share link.')
     } finally {

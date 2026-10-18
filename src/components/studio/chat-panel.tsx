@@ -25,6 +25,7 @@ import {
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
 import { downscaleImageDataUrl } from '@/lib/images'
+import { trackEvent } from '@/lib/analytics'
 import { Tool, ToolContent, ToolHeader } from '@/components/ai-elements/tool'
 import { CodeBlock } from '@/components/ai-elements/code-block'
 import { Spinner } from '@/components/ui/spinner'
@@ -288,6 +289,8 @@ export function ChatPanel({
       streamed: false,
       hidden: document.visibilityState === 'hidden',
     }
+    // Never the text itself: only whether this opens the conversation.
+    trackEvent('prompt_sent', { first: messages.length === 0, images: files.length })
     // Ship the live editor content with the request: manual edits are only
     // persisted after a debounce, so the server's copy may be stale.
     void sendMessage(text ? { text, files } : { files }, { body: { code } })

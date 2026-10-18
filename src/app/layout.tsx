@@ -3,6 +3,7 @@ import './globals.css'
 import { Geist } from "next/font/google";
 import { ClerkProvider } from '@clerk/nextjs'
 import { cn } from "@/lib/utils";
+import { Analytics } from '@/components/analytics'
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -26,7 +27,10 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en" className={cn("dark", "font-sans", geist.variable)}>
-        <body className="antialiased">{children}</body>
+        <body className="antialiased">
+          {children}
+          <Analytics />
+        </body>
       </html>
     </ClerkProvider>
   )
