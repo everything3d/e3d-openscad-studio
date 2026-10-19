@@ -3,6 +3,7 @@ import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, ne, or, sql
 import { generateId, type UIMessage } from 'ai'
 import { db } from '.'
 import { buildCanonicalProjectSeed } from '../canonicals'
+import { withoutEmptyMessages } from '../chat-history'
 import {
   BUILT_IN_CANONICALS,
   RETIRED_CANONICAL_IDS,
@@ -96,7 +97,7 @@ async function loadProjectSnapshot(
     .orderBy(asc(messages.seq))
   return {
     ...artifacts,
-    messages: messageRows.map(
+    messages: withoutEmptyMessages(messageRows).map(
       (row) =>
         ({
           id: row.id,
@@ -355,7 +356,9 @@ export async function getProjectMessages(id: string): Promise<UIMessage[]> {
     .where(eq(messages.projectId, id))
     .orderBy(asc(messages.seq))
 
-  return rows.map(
+  // Older failed turns left assistant rows with no parts; hide them so the
+  // conversation can continue (the next save rewrites the history without them).
+  return withoutEmptyMessages(rows).map(
     (r) =>
       ({
         id: r.id,
@@ -1124,6 +1127,9 @@ export async function saveChat({
   uiMessages: UIMessage[]
   code: string | null
 }): Promise<void> {
+  // A failed model call ends with an assistant message that has no parts.
+  // Persisting it would make every later turn fail validation.
+  uiMessages = withoutEmptyMessages(uiMessages)
   await db.transaction(async (tx) => {
     // Serialize saves for the same workspace so overlapping chat requests
     // cannot both observe the same prefix and insert duplicate messages.

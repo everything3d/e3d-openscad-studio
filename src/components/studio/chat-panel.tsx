@@ -26,6 +26,7 @@ import {
 } from '@/components/ai-elements/prompt-input'
 import { downscaleImageDataUrl } from '@/lib/images'
 import { trackEvent } from '@/lib/analytics'
+import { isEmptyMessage, withoutEmptyMessages } from '@/lib/chat-history'
 import { Tool, ToolContent, ToolHeader } from '@/components/ai-elements/tool'
 import { CodeBlock } from '@/components/ai-elements/code-block'
 import { Spinner } from '@/components/ui/spinner'
@@ -256,6 +257,11 @@ export function ChatPanel({
     }
   }, [messages, onCode])
 
+  // A turn that ended without an error but also without any reply (the model
+  // returned nothing) would otherwise leave the user staring at silence.
+  const last = messages.at(-1)
+  const emptyReply = status === 'ready' && last?.role === 'assistant' && isEmptyMessage(last)
+
   const [attachError, setAttachError] = useState<string | null>(null)
   useEffect(() => {
     if (!attachError) return
@@ -307,7 +313,9 @@ export function ChatPanel({
               description='The AI writes the OpenSCAD code and it renders live in the preview. Try "a hexagonal phone stand", or attach photos or sketches of a part to recreate.'
             />
           )}
-          {messages.map((message) => (
+          {/* A failed turn leaves an assistant message with no parts; the error
+              below explains it, so do not draw an empty bubble for it. */}
+          {withoutEmptyMessages(messages).map((message) => (
             <Message from={message.role} key={message.id}>
               <MessageContent>
                 {message.parts.map((part, i) => {
@@ -386,10 +394,14 @@ export function ChatPanel({
             <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               The connection dropped before the reply was saved. Please send your message again.
             </div>
+          ) : error ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              {errorText(error)}
+            </div>
           ) : (
-            error && (
+            emptyReply && (
               <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                {errorText(error)}
+                The AI did not send a reply. Please try again.
               </div>
             )
           )}
