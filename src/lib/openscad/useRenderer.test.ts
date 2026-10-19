@@ -11,6 +11,8 @@ vi.mock('react', () => ({
   },
   useEffect: (effect: () => () => void) => { hooks.cleanup = effect() },
 }))
+const analytics = vi.hoisted(() => ({ track: vi.fn() }))
+vi.mock('@vercel/analytics', () => analytics)
 import { useRenderer } from './useRenderer'
 
 class FakeWorker {
@@ -29,6 +31,7 @@ describe('renderer worker lifecycle', () => {
     vi.useFakeTimers()
     FakeWorker.instances = []
     vi.stubGlobal('Worker', FakeWorker)
+    analytics.track.mockClear()
   })
   afterEach(() => {
     hooks.cleanup?.()
@@ -48,6 +51,9 @@ describe('renderer worker lifecycle', () => {
     vi.advanceTimersByTime(90_001)
     expect(hooks.state.status).toBe('done')
     expect(worker.terminate).not.toHaveBeenCalled()
+    // Superseded and cancelled previews are not results anyone saw.
+    expect(analytics.track).toHaveBeenCalledOnce()
+    expect(analytics.track).toHaveBeenCalledWith('render_succeeded', { seconds: '<1s', first: true })
   })
   it('terminates a stuck render and creates a fresh worker for the next edit', () => {
     const renderer = useRenderer()
@@ -55,6 +61,7 @@ describe('renderer worker lifecycle', () => {
     vi.advanceTimersByTime(90_001)
     expect(hooks.state.status).toBe('error')
     expect(FakeWorker.instances[0].terminate).toHaveBeenCalledOnce()
+    expect(analytics.track).toHaveBeenCalledWith('render_failed', { reason: 'timeout', first: true })
     renderer.render('cube(2);')
     expect(FakeWorker.instances).toHaveLength(2)
   })
@@ -64,8 +71,31 @@ describe('renderer worker lifecycle', () => {
     const rejected = expect(exported).rejects.toThrow('Worker crashed')
     FakeWorker.instances[0].onerror?.({ message: 'Worker crashed' })
     await rejected
+    expect(analytics.track).toHaveBeenCalledWith('render_failed', { reason: 'crash', first: true })
     expect(vi.getTimerCount()).toBe(0)
     renderer.render('cube(2);')
     expect(FakeWorker.instances).toHaveLength(2)
+  })
+  it('reports preview results, marking the first one since the workspace opened', () => {
+    const renderer = useRenderer()
+    renderer.render('cube(1);')
+    const worker = FakeWorker.instances[0]
+    vi.advanceTimersByTime(4_000)
+    worker.emit({ type: 'render', id: 1, ok: true, mesh, log: '' })
+    expect(analytics.track).toHaveBeenLastCalledWith('render_succeeded', { seconds: '3-10s', first: true })
+    renderer.render('cube(;')
+    worker.emit({ type: 'render', id: 2, ok: false, error: 'Parser error', log: '' })
+    expect(analytics.track).toHaveBeenLastCalledWith('render_failed', { reason: 'openscad', first: false })
+    renderer.reset()
+    renderer.render('cube(3);')
+    worker.emit({ type: 'render', id: 4, ok: true, mesh, log: '' })
+    expect(analytics.track).toHaveBeenLastCalledWith('render_succeeded', { seconds: '<1s', first: true })
+  })
+  it('does not count exports as preview renders', async () => {
+    const renderer = useRenderer()
+    const exported = renderer.exportModel('cube(1);', [], 'binstl')
+    FakeWorker.instances[0].emit({ type: 'export', id: 1, ok: true, data: new ArrayBuffer(8), format: 'binstl', log: '' })
+    await exported
+    expect(analytics.track).not.toHaveBeenCalled()
   })
 })

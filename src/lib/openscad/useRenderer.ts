@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { WorkspaceFile } from '@/lib/types'
 import { base64ToBytes } from '@/lib/files'
+import { durationBucket, trackEvent } from '@/lib/analytics'
 import type { ParsedMesh } from './off'
 import type { ExportFormat, WorkerRequest, WorkerResponse } from './render.worker'
 
@@ -48,12 +49,23 @@ export function useRenderer() {
   /** Jobs the worker has been given and not answered, for the watchdog. */
   const inFlight = useRef(new Set<number>())
   const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** When the latest preview was requested, for its render time. */
+  const latestStartedAt = useRef(0)
+  /** Whether a preview result has been reported since the last reset. */
+  const reported = useRef(false)
   const [state, setState] = useState<RenderState>({
     status: 'idle',
     mesh: null,
     error: null,
     log: '',
   })
+
+  /** True for the first preview result since the workspace opened. */
+  const firstResult = useCallback(() => {
+    const first = !reported.current
+    reported.current = true
+    return first
+  }, [])
 
   const clearWatchdog = useCallback(() => {
     if (watchdog.current) clearTimeout(watchdog.current)
@@ -78,9 +90,10 @@ export function useRenderer() {
     watchdog.current = setTimeout(() => {
       const message = `Render timed out after ${JOB_TIMEOUT_MS / 1000} s. The model may contain an infinite loop or be far too detailed; the renderer has been restarted.`
       disposeWorker(message)
+      trackEvent('render_failed', { reason: 'timeout', first: firstResult() })
       setState((s) => ({ status: 'error', mesh: s.mesh, error: message, log: '' }))
     }, JOB_TIMEOUT_MS)
-  }, [clearWatchdog, disposeWorker])
+  }, [clearWatchdog, disposeWorker, firstResult])
 
   const ensureWorker = useCallback((): Worker => {
     if (workerRef.current) return workerRef.current
@@ -106,8 +119,13 @@ export function useRenderer() {
       // Preview renders: only the most recent request is applied.
       if (msg.id !== latest.current) return
       if (msg.ok) {
+        trackEvent('render_succeeded', {
+          seconds: durationBucket(Date.now() - latestStartedAt.current),
+          first: firstResult(),
+        })
         setState({ status: 'done', mesh: msg.mesh, error: null, log: msg.log })
       } else {
+        trackEvent('render_failed', { reason: 'openscad', first: firstResult() })
         setState((s) => ({
           status: 'error',
           mesh: s.mesh,
@@ -119,6 +137,7 @@ export function useRenderer() {
 
     worker.onerror = (e) => {
       disposeWorker(e.message || 'Worker crashed')
+      trackEvent('render_failed', { reason: 'crash', first: firstResult() })
       setState((s) => ({
         status: 'error',
         mesh: s.mesh,
@@ -127,7 +146,7 @@ export function useRenderer() {
       }))
     }
     return worker
-  }, [armWatchdog, disposeWorker])
+  }, [armWatchdog, disposeWorker, firstResult])
 
   useEffect(() => () => disposeWorker('Worker terminated'), [disposeWorker])
 
@@ -150,6 +169,7 @@ export function useRenderer() {
       const worker = ensureWorker()
       const id = ++reqId.current
       latest.current = id
+      latestStartedAt.current = Date.now()
       setState((s) => ({ ...s, status: 'rendering', error: null }))
       postJob(worker, { type: 'render', id, code, files: toPayload(files), format: 'off' })
     },
@@ -159,6 +179,7 @@ export function useRenderer() {
   /** Clear the preview and invalidate any in-flight preview response. */
   const reset = useCallback(() => {
     latest.current = ++reqId.current
+    reported.current = false
     setState({ status: 'idle', mesh: null, error: null, log: '' })
   }, [])
 

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useRenderer } from '@/lib/openscad/useRenderer'
 import { meshTo3MF, meshToSnapmakerU1Project } from '@/lib/openscad/threemf'
+import { downloadEvent, trackEvent, type ProductEvents } from '@/lib/analytics'
 import type { ExportFormat } from './preview'
 import {
   provisionalNameBase,
@@ -82,6 +83,9 @@ export function Studio({
   /** Phone layout only: the sidebar drawer, and whether the preview hides the chat. */
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [workspaceExpanded, setWorkspaceExpanded] = useState(false)
+  /** How the next workspace to open was reached, for its studio_opened event. */
+  const openSource = useRef<ProductEvents['studio_opened']['source']>('existing')
+  const lastOpenedId = useRef<string | null>(null)
 
   const { state: renderState, render, reset: resetRenderer, exportModel, warmup } = useRenderer()
 
@@ -151,6 +155,19 @@ export function Studio({
     }
     setProject(null)
   }, [activeId, openProject, resetRenderer, warmup])
+
+  // Once per workspace opened; going home and back counts as opening it again.
+  useEffect(() => {
+    const id = project?.id ?? null
+    if (id === lastOpenedId.current) return
+    lastOpenedId.current = id
+    if (!project) return
+    trackEvent('studio_opened', {
+      starter: project.canonicalDesignId ?? 'blank',
+      source: openSource.current,
+    })
+    openSource.current = 'existing'
+  }, [project])
 
   // Never reuse a preview after its source starts rendering or fails. The next
   // successful mesh supplies a fresh thumbnail for the active workspace.
@@ -233,6 +250,7 @@ export function Studio({
       const a = document.createElement('a')
       a.href = url
       a.download = fileName
+      trackEvent('download_clicked', downloadEvent(format))
       a.click()
       URL.revokeObjectURL(url)
     },
@@ -244,6 +262,7 @@ export function Studio({
     const res = await fetch('/api/projects', { method: 'POST' })
     if (!res.ok) return
     const p: FullProject = await res.json()
+    openSource.current = 'new'
     selectProject(p.id)
     await refreshList()
   }
@@ -252,6 +271,7 @@ export function Studio({
     const res = await fetch(`/api/canonicals/${canonicalId}/start`, { method: 'POST' })
     if (!res.ok) return
     const p: FullProject = await res.json()
+    openSource.current = 'new'
     selectProject(p.id)
     await refreshList()
   }
@@ -264,6 +284,7 @@ export function Studio({
     })
     if (res.ok) {
       const p: FullProject = await res.json()
+      openSource.current = 'fork'
       selectProject(p.id)
       await refreshList()
     }
@@ -468,7 +489,10 @@ export function Studio({
                   render={renderState}
                   onExport={(f) => void handleExport(f)}
                   onThumbnailReady={setThumbnail}
-                  onOrder={() => setOrderOpen(true)}
+                  onOrder={() => {
+                    setOrderOpen(true)
+                    trackEvent('order_started', { step: 'opened' })
+                  }}
                 />
               </div>
               <div className={cn('absolute inset-0', rightTab !== 'code' && 'hidden')}>

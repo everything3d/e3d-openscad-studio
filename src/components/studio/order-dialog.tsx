@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { WhatsAppIcon } from '@/components/whatsapp-button'
+import { trackEvent } from '@/lib/analytics'
 import type { ParsedMesh } from '@/lib/openscad/off'
 import { estimatePrint } from '@/lib/print-estimate'
 import { formatDuration, formatInr, quoteForPrint, type Quote } from '@/lib/pricing'
@@ -98,6 +99,7 @@ export function OrderDialog({
 
   async function placeOrder() {
     if (!estimate) return
+    trackEvent('order_started', { step: 'checkout' })
     setStatus('placing')
     setError(null)
     try {
@@ -129,6 +131,7 @@ export function OrderDialog({
     // Open the tab inside the click, before awaiting anything, or mobile
     // browsers treat it as a popup and block it.
     const tab = window.open('', '_blank')
+    trackEvent('order_started', { step: 'whatsapp' })
     setOpeningWhatsApp(true)
     const designUrl = order?.designUrl ?? (await fetchDesignLink(projectId))
     setOpeningWhatsApp(false)
@@ -238,7 +241,10 @@ export function OrderDialog({
           {whatsAppButton}
           {!checkoutEnabled ? null : status === 'placed' && order?.invoiceUrl ? (
             <Button
-              onClick={() => window.open(order.invoiceUrl ?? '', '_blank', 'noopener,noreferrer')}
+              onClick={() => {
+                trackEvent('order_started', { step: 'payment' })
+                window.open(order.invoiceUrl ?? '', '_blank', 'noopener,noreferrer')
+              }}
             >
               Continue to payment
             </Button>
