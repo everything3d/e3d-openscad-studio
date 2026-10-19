@@ -9,6 +9,7 @@ import { after } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createStudioAgent, studioTools, type StudioUIMessage } from '@/lib/agents/studio-agent'
 import { guardModelCall, spendGuardTextResponse } from '@/lib/spend-guard'
+import { withoutEmptyMessages } from '@/lib/chat-history'
 import { getProjectForChat, saveChat } from '@/lib/db/queries'
 
 // The chat panel's catch-up deadline (TURN_DEADLINE_MS) is derived from this.
@@ -49,7 +50,12 @@ export async function POST(req: Request) {
   }
   // Validating the history does not touch the database, so it overlaps the
   // project lookup instead of waiting behind it.
-  const validated = validateUIMessages<StudioUIMessage>({ messages: rawMessages, tools: studioTools })
+  // The browser still holds the empty reply of a turn that failed, and the SDK
+  // rejects a message with no parts, so drop those before validating.
+  const validated = validateUIMessages<StudioUIMessage>({
+    messages: Array.isArray(rawMessages) ? withoutEmptyMessages(rawMessages) : rawMessages,
+    tools: studioTools,
+  })
   validated.catch(() => {}) // surfaced below; this only avoids an unhandled rejection
 
   const project = await getProjectForChat(projectId, userId)
@@ -62,7 +68,16 @@ export async function POST(req: Request) {
   const verdict = await guardModelCall(userId)
   if (!verdict.allowed) return spendGuardTextResponse(verdict)
 
-  const uiMessages = await validated
+  let uiMessages: StudioUIMessage[]
+  try {
+    uiMessages = await validated
+  } catch (error) {
+    console.error('[chat] invalid message history', error)
+    return Response.json(
+      { error: 'This conversation could not be read. Please reload the page and try again.' },
+      { status: 400 },
+    )
+  }
 
   // Prefer the live editor content over the DB row: manual edits are only
   // persisted after a debounce, so the row can be stale at send time.
