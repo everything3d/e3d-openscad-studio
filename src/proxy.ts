@@ -4,8 +4,10 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 // require a signed-in user. /api/fonts only proxies Google Fonts bytes
 // (no user data) and stays public so responses CDN-cache cleanly. /api/cron
 // is called by Vercel Cron, not a user, and checks CRON_SECRET itself.
+// /admin and /api/auth are staff pages behind their own Google sign-in
+// (src/auth.ts), not Clerk.
 const isProtectedRoute = createRouteMatcher(['/studio(.*)', '/api(.*)'])
-const isPublicRoute = createRouteMatcher(['/api/fonts(.*)', '/api/cron(.*)'])
+const isPublicRoute = createRouteMatcher(['/api/fonts(.*)', '/api/cron(.*)', '/api/auth(.*)'])
 
 export default clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req) && !isPublicRoute(req)) {
