@@ -1239,3 +1239,71 @@ export async function recordPrintOrder(input: RecordPrintOrderInput): Promise<st
   })
   return id
 }
+
+export interface AdminChatSummary {
+  id: string
+  name: string
+  userId: string
+  messageCount: number
+  /** Text of the first user message, for chats still named "Untitled". */
+  firstPrompt: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+/**
+ * Every account's chats for the staff desk, most recently active first.
+ * Projects nobody has talked to yet (fresh workspaces, untouched starters)
+ * are left out. Unscoped by user: only call this behind the staff check.
+ */
+export async function listAllChats({
+  limit,
+  offset,
+  userId,
+}: {
+  limit: number
+  offset: number
+  userId?: string
+}): Promise<{ chats: AdminChatSummary[]; total: number }> {
+  const hasMessages = sql`exists (select 1 from ${messages} where ${messages.projectId} = ${projects.id})`
+  const where = userId ? and(hasMessages, eq(projects.userId, userId)) : hasMessages
+  const [rows, [totalRow]] = await Promise.all([
+    db
+      .select({
+        id: projects.id,
+        name: projects.name,
+        userId: projects.userId,
+        messageCount: sql<number>`(select count(*)::int from ${messages} where ${messages.projectId} = ${projects.id})`,
+        firstPrompt: sql<string | null>`(
+          select p->>'text' from ${messages} m, jsonb_array_elements(m.parts) p
+          where m.project_id = ${projects.id} and m.role = 'user' and p->>'type' = 'text'
+          order by m.seq limit 1
+        )`,
+        createdAt: projects.createdAt,
+        updatedAt: projects.updatedAt,
+      })
+      .from(projects)
+      .where(where)
+      .orderBy(desc(projects.updatedAt))
+      .limit(limit)
+      .offset(offset),
+    db.select({ total: count() }).from(projects).where(where),
+  ])
+  return { chats: rows, total: totalRow?.total ?? 0 }
+}
+
+/** A project's header fields for the staff desk, regardless of owner. */
+export async function getChatForAdmin(id: string) {
+  const [project] = await db
+    .select({
+      id: projects.id,
+      name: projects.name,
+      userId: projects.userId,
+      code: projects.code,
+      createdAt: projects.createdAt,
+      updatedAt: projects.updatedAt,
+    })
+    .from(projects)
+    .where(eq(projects.id, id))
+  return project ?? null
+}
