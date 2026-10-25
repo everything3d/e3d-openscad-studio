@@ -59,6 +59,11 @@ const VARIANTS: Record<string, Record<string, string | boolean>[]> = {
   'builtin-desk-nameplate': [{ showAssembled: true }, { title: '' }],
   'builtin-figurine-display-base': [{ show_assembled: true, two_sided: true }],
   'builtin-award-plaque-base': [{ show_assembled: true }, { line3: '' }],
+  'builtin-podium-nameplate': [
+    { tagline2: 'Coffee first, meetings later' },
+    { tagline1: '', tagline2: '' },
+    { name: 'Venkataraman Subramaniam Krishnamurthy' },
+  ],
   'builtin-two-name-illusion': [{ frontName: 'ANNA', sideName: 'LEO' }],
   'builtin-letter-pen-stand': [
     { name_text: 'Mia Rose', export_part: 'name' },

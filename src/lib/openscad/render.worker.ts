@@ -20,7 +20,7 @@ import {
  * Bump when public/openscad/* changes. The files are served immutable (see
  * next.config.ts), so the version in the query string is what busts the cache.
  */
-export const OPENSCAD_ASSET_VERSION = '2025.03.25-1'
+export const OPENSCAD_ASSET_VERSION = '2025.03.25-2'
 const wasmUrl = `/openscad/openscad.wasm?v=${OPENSCAD_ASSET_VERSION}`
 const fontsZipUrl = `/openscad/fonts.zip?v=${OPENSCAD_ASSET_VERSION}`
 
