@@ -27,6 +27,7 @@ describe('built-in canonical catalog', () => {
       'builtin-desk-nameplate',
       'builtin-figurine-display-base',
       'builtin-award-plaque-base',
+      'builtin-podium-nameplate',
       'builtin-two-name-illusion',
       'builtin-letter-pen-stand',
     ])
@@ -98,6 +99,12 @@ describe('built-in canonical catalog', () => {
     }
     expect(figurine.code).toContain('show_heart = true')
     expect(award.code).toContain('line3 = "With heartfelt gratitude"')
+
+    // The podium plate fits the name and grows the taglines to fill the width.
+    const podium = byId('builtin-podium-nameplate')
+    expect(podium.code).toContain('tagFitSize')
+    expect(podium.code).toContain('nameFont = "Cutive"')
+    expect(podium.code).toContain('tagFont = "Akaya Kanadaka"')
 
     // The illusion is the intersection of two perpendicular words.
     const illusion = byId('builtin-two-name-illusion')

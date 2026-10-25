@@ -5,6 +5,7 @@ import { LETTER_PEN_STAND_SCAD } from './builtin-scad/letter-pen-stand'
 import { LETTER_STANDS_LIBRARY_SCAD } from './builtin-scad/letter-stands-library'
 import { NAME_KEYCHAIN_SCAD } from './builtin-scad/name-keychain'
 import { PACIFICO_OUTLINES_SCAD } from './builtin-scad/pacifico-outlines'
+import { PODIUM_NAMEPLATE_SCAD } from './builtin-scad/podium-nameplate'
 import { THREE_LAYER_NAME_PIGGY_BANK_SCAD } from './builtin-scad/three-layer-name-piggy-bank'
 import { TWO_LAYER_NAME_PIGGY_BANK_SCAD } from './builtin-scad/two-layer-name-piggy-bank'
 import { TWO_NAME_ILLUSION_SCAD } from './builtin-scad/two-name-illusion'
@@ -215,6 +216,28 @@ Gotchas:
 - The text block must fit the plaque height; the render stops with a message if it does not.`,
     thumbnail: '/canonicals/award-plaque-base.webp',
     supersedes: ['6TLOjLkIkM3Iv7kp', 'MuJyqR8R7BMdK2eP'],
+  },
+  {
+    id: 'builtin-podium-nameplate',
+    title: 'Podium nameplate',
+    description:
+      'A thin rounded plate with a raised name and up to two taglines, sized for the front of a figurine podium or trophy. Prints flat in three colors.',
+    category: 'Desk & display',
+    code: PODIUM_NAMEPLATE_SCAD,
+    modificationGuide: `A single flat plate (109 × 49 × 1 mm by default) with raised text in two colors. It is often made in batches: one plate per person, same style, different name and taglines.
+
+Common changes:
+- Set name, tagline1 and tagline2. Leave a tagline empty to drop it; the text block re-centres for one or zero taglines.
+- The name shrinks only when it would overrun the plate. Both taglines share one size, which grows to fill the plate width up to tagMaxSize (tagMaxSizeTwoTags when there are two lines), so a short tagline gets bigger, not lost.
+- nameFont and tagFont: Cutive (typewriter serif) for the name and Akaya Kanadaka (playful hand-drawn) for the taglines is the house style. Change them only if the user asks.
+- plateColor, nameColor and tagColor are the three printable regions.
+- plateLength, plateWidth and cornerRadius size the plate to match a podium face.
+
+Gotchas:
+- The line positions in the Layout group are tuned for the default plate size and text sizes. If you change plateWidth or the text sizes a lot, move them too so lines do not overlap or hit the edge.
+- Very long taglines get small. Split them across tagline1 and tagline2 rather than shrinking below about 3.5 mm.
+- Keep textHeight at 0.4 mm or more so the color change shows after slicing.`,
+    thumbnail: '/canonicals/podium-nameplate.webp',
   },
   {
     id: 'builtin-two-name-illusion',
