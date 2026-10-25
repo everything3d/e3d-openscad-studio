@@ -219,23 +219,27 @@ Gotchas:
   },
   {
     id: 'builtin-podium-nameplate',
-    title: 'Podium nameplate',
+    title: 'Figurine podium with nameplate',
     description:
-      'A thin rounded plate with a raised name and up to two taglines, sized for the front of a figurine podium or trophy. Prints flat in three colors.',
+      'A round, hollow podium with a seat for a figurine on top and a curved pocket on the front. A nameplate with a raised name and up to two taglines prints flat, then bends into the pocket.',
     category: 'Desk & display',
     code: PODIUM_NAMEPLATE_SCAD,
-    modificationGuide: `A single flat plate (109 × 49 × 1 mm by default) with raised text in two colors. It is often made in batches: one plate per person, same style, different name and taglines.
+    modificationGuide: `Two parts: a hollow podium and a thin nameplate (109 × 49 × 1 mm by default) that bends into a curved pocket on the podium's front. It is often made in batches: one podium and plate per person, same style, different name and taglines.
 
 Common changes:
 - Set name, tagline1 and tagline2. Leave a tagline empty to drop it; the text block re-centres for one or zero taglines.
 - The name shrinks only when it would overrun the plate. Both taglines share one size, which grows to fill the plate width up to tagMaxSize (tagMaxSizeTwoTags when there are two lines), so a short tagline gets bigger, not lost.
 - nameFont and tagFont: Cutive (typewriter serif) for the name and Akaya Kanadaka (playful hand-drawn) for the taglines is the house style. Change them only if the user asks.
-- plateColor, nameColor and tagColor are the three printable regions.
-- plateLength, plateWidth and cornerRadius size the plate to match a podium face.
+- figurineBaseDiameter sizes the seat on top to the figurine's base; 0 gives a flat top. pocketCount = 2 adds a matching pocket on the back.
+- podiumColor, plateColor, nameColor and tagColor are the printable regions.
+- showAssembled = true previews the plate wrapped into the pocket; false lays both parts out to print.
+${PRINT_FIT_GUIDANCE}
 
 Gotchas:
+- The pocket's length and height are derived from the plate (plateLength, plateWidth) plus the pocket clearances. Size the plate, not the pocket, and the pocket follows.
+- pocketDepth must hold the plate plus its raised text, or the text stands proud of the podium and catches. The render stops with a message if it does not.
 - The line positions in the Layout group are tuned for the default plate size and text sizes. If you change plateWidth or the text sizes a lot, move them too so lines do not overlap or hit the edge.
-- Very long taglines get small. Split them across tagline1 and tagline2 rather than shrinking below about 3.5 mm.
+- The podium prints upside down on its top face, so the hollow needs no support; the figurine seat is then a short bridge. Keep it that way round.
 - Keep textHeight at 0.4 mm or more so the color change shows after slicing.`,
     thumbnail: '/canonicals/podium-nameplate.webp',
   },
