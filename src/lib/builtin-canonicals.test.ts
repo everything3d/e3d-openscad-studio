@@ -30,6 +30,7 @@ describe('built-in canonical catalog', () => {
       'builtin-podium-nameplate',
       'builtin-two-name-illusion',
       'builtin-letter-pen-stand',
+      'builtin-mini-barbell',
     ])
   })
 
@@ -105,6 +106,12 @@ describe('built-in canonical catalog', () => {
     expect(podium.code).toContain('tagFitSize')
     expect(podium.code).toContain('nameFont = "Cutive"')
     expect(podium.code).toContain('tagFont = "Akaya Kanadaka"')
+
+    // The barbell's plates carry their own labels, and the glue sockets stay deep.
+    const barbell = byId('builtin-mini-barbell')
+    expect(barbell.code).toContain('labelFont = "Bebas Neue"')
+    expect(barbell.code).toContain('socketDepth = 20')
+    expect(barbell.code).toContain('loadPerSide')
 
     // The illusion is the intersection of two perpendicular words.
     const illusion = byId('builtin-two-name-illusion')
