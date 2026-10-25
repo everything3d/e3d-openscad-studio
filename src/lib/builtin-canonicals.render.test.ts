@@ -65,6 +65,12 @@ const VARIANTS: Record<string, Record<string, string | boolean>[]> = {
     { name: 'Venkataraman Subramaniam Krishnamurthy' },
   ],
   'builtin-two-name-illusion': [{ frontName: 'ANNA', sideName: 'LEO' }],
+  'builtin-mini-barbell': [
+    { showAssembled: true },
+    { show: 'bar' },
+    { show: 'plates', showAssembled: true },
+    { unitLabel: 'LB', showAssembled: true },
+  ],
   'builtin-letter-pen-stand': [
     { name_text: 'Mia Rose', export_part: 'name' },
     { name_text: 'Kevin', big_letter: 'J', export_part: 'stand' },

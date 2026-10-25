@@ -3,6 +3,7 @@ import { AWARD_PLAQUE_BASE_SCAD, FIGURINE_DISPLAY_BASE_SCAD } from './builtin-sc
 import { DESK_NAMEPLATE_SCAD } from './builtin-scad/desk-nameplate'
 import { LETTER_PEN_STAND_SCAD } from './builtin-scad/letter-pen-stand'
 import { LETTER_STANDS_LIBRARY_SCAD } from './builtin-scad/letter-stands-library'
+import { MINI_BARBELL_SCAD } from './builtin-scad/mini-barbell'
 import { NAME_KEYCHAIN_SCAD } from './builtin-scad/name-keychain'
 import { PACIFICO_OUTLINES_SCAD } from './builtin-scad/pacifico-outlines'
 import { PODIUM_NAMEPLATE_SCAD } from './builtin-scad/podium-nameplate'
@@ -287,6 +288,32 @@ Gotchas:
 - Only basic Latin (ASCII) characters are in the outlines; accented letters stop the render.
 - The stand prints upright on its base; the name prints flat at Z=0.`,
     thumbnail: '/canonicals/letter-pen-stand.webp',
+  },
+  {
+    id: 'builtin-mini-barbell',
+    title: 'Mini barbell with bumper plates',
+    description:
+      'A desk-size barbell with colour-coded bumper plates that slide on and off, so it can be loaded to match a lift. The plates print flat with raised weight labels; the bar glues together from three parts.',
+    category: 'Desk & display',
+    code: MINI_BARBELL_SCAD,
+    modificationGuide: `Three kinds of part: bumper plates, one shaft and two end pieces (collar + sleeve) that glue onto the shaft. showAssembled = false lays them all out flat for slicing; true shows the bar loaded with loadPerSide.
+
+Common changes:
+- Edit the plates list. Each row is [label, overall thickness, plate colour, label colour, count]. Add or remove rows to change the set; count sets how many of each get printed.
+- unitLabel switches the unit text, e.g. "LB" with labels like "45" and "2.5". Labels are squeezed to fit, so decimals work.
+- loadPerSide lists the plates on each side in the assembled view, inner to outer, by label. Every label must exist in plates.
+- sleeveLength sets how many plates fit per side. The render stops with a message if loadPerSide is thicker than the sleeve.
+- gripLength is the bar between the collars. Match it to a figurine's hands when the bar is held by a figure.
+- show = "plates" or "bar" exports just one kind of part.
+${PRINT_FIT_GUIDANCE}
+
+Gotchas:
+- Plates print back-down: the back is completely flat and every raised detail is on the face. Keep it that way, or the plate needs supports.
+- The label colour also prints the hub insert, so each plate is two colours. On a white plate use a dark label colour.
+- plateHoleClearance is the plate-on-sleeve fit (0.5 mm slides on and off easily). socketClearance is the end-on-shaft fit; the ends are glued, so it only needs to slide on.
+- Keep socketDepth deep (about 20 mm). Shallow sockets let the glued ends droop under the plates.
+- The shaft prints lying on its flat (shaftFlat); the end pieces print standing on the collar with the socket opening on the bed.`,
+    thumbnail: '/canonicals/mini-barbell.webp',
   },
 ] as const
 
