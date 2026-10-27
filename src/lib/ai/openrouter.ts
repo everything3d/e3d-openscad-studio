@@ -39,7 +39,7 @@ function chatModel(primary: string, fallbacks: string[]) {
  */
 export function studioModel() {
   return chatModel(
-    process.env.STUDIO_MODEL ?? 'openai/gpt-5.6-terra',
+    process.env.STUDIO_MODEL ?? 'openai/gpt-6.1-terra',
     parseModelList(process.env.STUDIO_MODEL_FALLBACKS),
   )
 }
