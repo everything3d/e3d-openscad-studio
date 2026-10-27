@@ -41,7 +41,7 @@ Browser                              Server (Next.js App Router)
 ───────                              ───────────────────────────
 Chat (useChat + AI Elements)  ──▶    POST /api/chat
                                        └─ ToolLoopAgent (AI SDK)
-                                          ├─ model: openai/gpt-5.6-terra (OpenRouter)
+                                          ├─ model: openai/gpt-6.1-terra (OpenRouter)
                                           ├─ tool: writeOpenscad (zod-typed)
                                           └─ onFinish → persist chat + code (Drizzle/Postgres)
 writeOpenscad tool part  ──▶  editor + preview
@@ -50,7 +50,7 @@ openscad-wasm worker     ──▶  binary STL  ──▶  three.js preview
 ```
 
 - **AI**: [AI SDK](https://ai-sdk.dev) `ToolLoopAgent` behind an API route, routed
-  through [OpenRouter](https://openrouter.ai) (`openai/gpt-5.6-terra` by default).
+  through [OpenRouter](https://openrouter.ai) (`openai/gpt-6.1-terra` by default).
   Model ids are configured in one place, `src/lib/ai/openrouter.ts`, and overridable
   per environment via `STUDIO_MODEL` / `NAMING_MODEL` — any id from
   [openrouter.ai/models](https://openrouter.ai/models) that supports tool calling and
