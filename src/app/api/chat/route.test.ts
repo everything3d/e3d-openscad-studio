@@ -77,4 +77,27 @@ describe('POST /api/chat', () => {
     expect(onError(new Error('This request requires more credits'))).toMatch(/AI service/)
     spy.mockRestore()
   })
+
+  it('saves code written while continuing a turn after an inspection', async () => {
+    const write = (id: string, code: string) => ({
+      type: 'tool-writeOpenscad',
+      toolCallId: id,
+      state: 'output-available',
+      input: { code },
+      output: { ok: true, lines: 1 },
+    })
+    // The turn arrives with the first write already in its assistant message,
+    // and the reply keeps appending to that same message.
+    const incoming = { id: 'a1', role: 'assistant', parts: [write('w1', 'cube(1);')] }
+    await POST(request([user('u1'), incoming]))
+    const { onFinish } = mocks.createAgentUIStreamResponse.mock.calls[0][0]
+
+    await onFinish({ messages: [user('u1'), incoming] })
+    expect(mocks.saveChat).toHaveBeenLastCalledWith(expect.objectContaining({ code: null }))
+
+    const continued = { ...incoming, parts: [...incoming.parts, write('w2', 'cube(2);')] }
+    await onFinish({ messages: [user('u1'), continued] })
+    expect(mocks.saveChat).toHaveBeenLastCalledWith(expect.objectContaining({ code: 'cube(2);' }))
+  })
 })
+

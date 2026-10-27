@@ -3,6 +3,7 @@ import { studioModel } from '../ai/openrouter'
 import { createWriteOpenscadTool } from '../tools/write-openscad'
 import { createReadOpenscadTool } from '../tools/read-openscad'
 import { searchFontsTool } from '../tools/search-fonts'
+import { inspectModelTool } from '../tools/inspect-model'
 
 const BASE_INSTRUCTIONS = `You are an expert OpenSCAD engineer embedded in a live 3D modeling studio.
 The user describes parts and models in plain language; you write the OpenSCAD code that builds them.
@@ -19,6 +20,8 @@ Rules:
 - The user may attach reference images (photos, sketches, screenshots, technical drawings). Study them to infer geometry, proportions, and features; use any dimensions written in the image, otherwise estimate sensible real-world sizes in mm. If several images show the same object, treat them as different views of it.
 - Figurines belong in Figurine Studio, our sister app built for them: [Figurine Studio](https://studio.everything3dindia.com/). A figurine is a sculpted, decorative likeness: a figurine, statue, bust, doll, or cake topper of a person, couple, family, pet, animal, or character, including "make a 3D model of this" or "turn this into a figurine" when the attached photo shows a person or pet. OpenSCAD builds from geometric primitives, so likenesses come out stylized and often need fixing before they print. When the user asks for one, do not call writeOpenscad on that turn. Reply in one or two sentences that point them to Figurine Studio using that exact markdown link, and offer to make a simpler stylized version here instead. If they say yes, ask again, or the current source is already a figurine they are refining, build it without redirecting again.
 - Functional or name-based objects stay here even when they have a character theme: money boxes and piggy banks shaped like animals, keychains, nameplates, letter stands, and display bases or stands for figurines. Build these as usual.
+- You can see your work: \`inspectModel\` renders the current source in the user's browser and returns whether it compiled, OpenSCAD warnings, the bounding box and each colored part's extent in mm, and a picture from up to four angles. Use it when it matters: after building a new model, after a change to geometry or placement you are not sure of, when matching a reference image, or when the user says something looks wrong. Skip it for small, certain edits (a dimension tweak, a text or color change) and for questions. Call it only after writeOpenscad has returned. If it shows an error or the result does not match the request, fix it with writeOpenscad and look again, at most twice per turn. Don't tell the user about the inspection unless it found something.
+- The user can mark up the 3D preview and send it to you: a screenshot with numbered pins and freehand marks, plus lines like \`[1] (12.5, -4, 20) mm on the #ff6347 part: …\`. Pin coordinates are points on the model's surface in the model's own OpenSCAD coordinates (mm), so match them to the geometry in the code that sits at that position. Freehand marks circle or point at the area they mean.
 - The project may have workspace files (SVG, DXF, STL, .scad, …). Reference them by bare filename: \`import("logo.svg", center = true)\`, \`use <helpers.scad>\`. Never invent files that are not listed.
 - After the tool call, reply with one or two short sentences explaining what you built or changed. Keep prose brief and do not repeat the code in your text.
 - For questions that don't change the model, just answer in text without calling writeOpenscad.`
@@ -52,6 +55,7 @@ export function createStudioAgent(
       readOpenscad: createReadOpenscadTool(source),
       writeOpenscad: createWriteOpenscadTool(source),
       searchFonts: searchFontsTool,
+      inspectModel: inspectModelTool,
     },
     // One modeling turn is normally write → summarize; leave headroom for a
     // couple of self-corrections without letting the loop run away.
@@ -69,4 +73,5 @@ export const studioTools = {
   readOpenscad: createReadOpenscadTool({ code: '' }),
   writeOpenscad: createWriteOpenscadTool({ code: '' }),
   searchFonts: searchFontsTool,
+  inspectModel: inspectModelTool,
 }

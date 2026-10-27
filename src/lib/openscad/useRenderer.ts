@@ -12,6 +12,15 @@ export interface RenderState {
   log: string
 }
 
+/** A preview's source; files are compared by identity, as the studio keeps them. */
+interface Source {
+  code: string
+  files: WorkspaceFile[]
+}
+
+const sameSource = (a: Source | null, b: Source | null) =>
+  a !== null && b !== null && a.code === b.code && a.files === b.files
+
 interface Pending {
   resolve: (data: ArrayBuffer) => void
   reject: (err: Error) => void
@@ -33,8 +42,10 @@ function toPayload(files: WorkspaceFile[]) {
 
 /**
  * Owns the OpenSCAD web worker. `render(code, files)` drives the live
- * preview (colored OFF, latest request wins); `exportModel(...)` runs a
- * one-off render in any supported format and resolves with the file bytes.
+ * preview (colored OFF, latest request wins); `whenRendered(code, files)`
+ * waits for the preview of that source, for the agent's inspections;
+ * `exportModel(...)` runs a one-off render in any supported format and
+ * resolves with the file bytes.
  *
  * The worker is created on first use (or `warmup()`), not on mount, so the
  * canonical library does not download the 17 MB of wasm and fonts for a
@@ -53,6 +64,11 @@ export function useRenderer() {
   const latestStartedAt = useRef(0)
   /** Whether a preview result has been reported since the last reset. */
   const reported = useRef(false)
+  /** The source of the latest preview request, and of the last one that finished. */
+  const latestSource = useRef<Source | null>(null)
+  const settled = useRef<{ source: Source; result: RenderState } | null>(null)
+  /** whenRendered calls waiting for the latest preview to finish. */
+  const waiters = useRef<((result: RenderState) => void)[]>([])
   const [state, setState] = useState<RenderState>({
     status: 'idle',
     mesh: null,
@@ -65,6 +81,14 @@ export function useRenderer() {
     const first = !reported.current
     reported.current = true
     return first
+  }, [])
+
+  /** Record the latest preview's outcome and hand it to everyone waiting. */
+  const settle = useCallback((result: RenderState) => {
+    if (latestSource.current) settled.current = { source: latestSource.current, result }
+    const waiting = waiters.current
+    waiters.current = []
+    for (const resolve of waiting) resolve(result)
   }, [])
 
   const clearWatchdog = useCallback(() => {
@@ -92,8 +116,9 @@ export function useRenderer() {
       disposeWorker(message)
       trackEvent('render_failed', { reason: 'timeout', first: firstResult() })
       setState((s) => ({ status: 'error', mesh: s.mesh, error: message, log: '' }))
+      settle({ status: 'error', mesh: null, error: message, log: '' })
     }, JOB_TIMEOUT_MS)
-  }, [clearWatchdog, disposeWorker, firstResult])
+  }, [clearWatchdog, disposeWorker, firstResult, settle])
 
   const ensureWorker = useCallback((): Worker => {
     if (workerRef.current) return workerRef.current
@@ -123,7 +148,9 @@ export function useRenderer() {
           seconds: durationBucket(Date.now() - latestStartedAt.current),
           first: firstResult(),
         })
-        setState({ status: 'done', mesh: msg.mesh, error: null, log: msg.log })
+        const result: RenderState = { status: 'done', mesh: msg.mesh, error: null, log: msg.log }
+        setState(result)
+        settle(result)
       } else {
         trackEvent('render_failed', { reason: 'openscad', first: firstResult() })
         setState((s) => ({
@@ -132,6 +159,7 @@ export function useRenderer() {
           error: msg.error || 'Render failed',
           log: msg.log,
         }))
+        settle({ status: 'error', mesh: null, error: msg.error || 'Render failed', log: msg.log })
       }
     }
 
@@ -144,9 +172,10 @@ export function useRenderer() {
         error: e.message || 'Worker crashed',
         log: '',
       }))
+      settle({ status: 'error', mesh: null, error: e.message || 'Worker crashed', log: '' })
     }
     return worker
-  }, [armWatchdog, disposeWorker, firstResult])
+  }, [armWatchdog, disposeWorker, firstResult, settle])
 
   useEffect(() => () => disposeWorker('Worker terminated'), [disposeWorker])
 
@@ -166,9 +195,19 @@ export function useRenderer() {
 
   const render = useCallback(
     (code: string, files: WorkspaceFile[] = []) => {
+      const source = { code, files }
+      // An inspection may already have started this exact preview; the
+      // studio's debounced render of the same code then has nothing to add.
+      if (
+        sameSource(latestSource.current, source) &&
+        (inFlight.current.has(latest.current) || sameSource(settled.current?.source ?? null, source))
+      ) {
+        return
+      }
       const worker = ensureWorker()
       const id = ++reqId.current
       latest.current = id
+      latestSource.current = source
       latestStartedAt.current = Date.now()
       setState((s) => ({ ...s, status: 'rendering', error: null }))
       postJob(worker, { type: 'render', id, code, files: toPayload(files), format: 'off' })
@@ -176,12 +215,36 @@ export function useRenderer() {
     [ensureWorker, postJob],
   )
 
+  /**
+   * Resolve with the preview of this source: at once if it is the one already
+   * shown, otherwise once it renders. If the source changes again first (the
+   * user kept typing), resolves with that newer preview, which is what the
+   * workspace now shows.
+   */
+  const whenRendered = useCallback(
+    (code: string, files: WorkspaceFile[] = []): Promise<RenderState> => {
+      const source = { code, files }
+      const done = settled.current
+      if (done && sameSource(done.source, source) && sameSource(latestSource.current, source)) {
+        return Promise.resolve(done.result)
+      }
+      return new Promise((resolve) => {
+        waiters.current.push(resolve)
+        render(code, files)
+      })
+    },
+    [render],
+  )
+
   /** Clear the preview and invalidate any in-flight preview response. */
   const reset = useCallback(() => {
     latest.current = ++reqId.current
     reported.current = false
+    latestSource.current = null
+    settled.current = null
     setState({ status: 'idle', mesh: null, error: null, log: '' })
-  }, [])
+    settle({ status: 'error', mesh: null, error: 'The workspace was closed.', log: '' })
+  }, [settle])
 
   const exportModel = useCallback(
     (code: string, files: WorkspaceFile[], format: ExportFormat): Promise<ArrayBuffer> => {
@@ -195,5 +258,5 @@ export function useRenderer() {
     [ensureWorker, postJob],
   )
 
-  return { state, render, reset, exportModel, warmup }
+  return { state, render, whenRendered, reset, exportModel, warmup }
 }

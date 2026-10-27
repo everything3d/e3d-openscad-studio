@@ -50,6 +50,8 @@ export function meshToGeometry(mesh: ParsedMesh): THREE.BufferGeometry {
 export function createModelMesh(parsed: ParsedMesh): THREE.Mesh {
   const geometry = meshToGeometry(parsed)
   geometry.computeVertexNormals()
+  geometry.computeBoundingBox()
+  const offset = geometry.boundingBox!.getCenter(new THREE.Vector3())
   geometry.center()
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true,
@@ -58,7 +60,24 @@ export function createModelMesh(parsed: ParsedMesh): THREE.Mesh {
   })
   const mesh = new THREE.Mesh(geometry, material)
   mesh.rotation.x = -Math.PI / 2
+  // Where center() moved the model from, to map points back (see toScadPoint).
+  mesh.userData.scadOffset = offset
   return mesh
+}
+
+/** A point in the scene, as OpenSCAD coordinates (mm) of the model built by createModelMesh. */
+export function toScadPoint(mesh: THREE.Mesh, world: THREE.Vector3): [number, number, number] {
+  const local = mesh.worldToLocal(world.clone()).add(mesh.userData.scadOffset as THREE.Vector3)
+  return [local.x, local.y, local.z]
+}
+
+/** The `color()` of the face a ray hit, as #rrggbb. */
+export function faceColorHex(mesh: THREE.Mesh, faceIndex: number): string {
+  const colors = mesh.geometry.getAttribute('color')
+  // Non-indexed geometry: face n's first vertex is vertex 3n. Stored linear,
+  // getHexString converts back to the sRGB the source was written in.
+  const i = faceIndex * 3
+  return `#${new THREE.Color(colors.getX(i), colors.getY(i), colors.getZ(i)).getHexString()}`
 }
 
 /**

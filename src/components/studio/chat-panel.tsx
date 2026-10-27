@@ -2,7 +2,7 @@
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { useChat } from '@ai-sdk/react'
-import { DefaultChatTransport } from 'ai'
+import { DefaultChatTransport, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import { BoxIcon, ImagePlusIcon } from 'lucide-react'
 import {
   Conversation,
@@ -19,17 +19,28 @@ import {
   PromptInputButton,
   PromptInputFooter,
   PromptInputHeader,
+  PromptInputProvider,
   PromptInputSubmit,
   PromptInputTextarea,
   usePromptInputAttachments,
+  usePromptInputController,
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
 import { downscaleImageDataUrl } from '@/lib/images'
 import { trackEvent } from '@/lib/analytics'
-import { isEmptyMessage, withoutEmptyMessages } from '@/lib/chat-history'
+import {
+  isEmptyMessage,
+  withoutEmptyMessages,
+  withoutOldInspectionImages,
+} from '@/lib/chat-history'
 import { MessageParts } from '@/components/studio/message-parts'
 import { Spinner } from '@/components/ui/spinner'
 import type { StudioUIMessage } from '@/lib/agents/studio-agent'
+import {
+  DEFAULT_INSPECT_VIEWS,
+  type InspectModelOutput,
+  type InspectView,
+} from '@/lib/tools/inspect-model'
 
 /**
  * How long after sending a turn its reply can still be saved. The chat route
@@ -49,6 +60,19 @@ function isConnectionError(error: Error): boolean {
   return error instanceof TypeError || error.name === 'NetworkError'
 }
 
+/**
+ * Inspections the agent may run in one turn. Each one sends the turn back to
+ * the server, so a model that keeps looking would otherwise loop forever.
+ */
+const MAX_INSPECTIONS_PER_TURN = 3
+
+/** A marked-up preview the user chose to send, waiting to land in the composer. */
+export interface PreviewMarkup {
+  id: number
+  text: string
+  image: File
+}
+
 /** The turn being caught up on, or 'failed' once it is clear it was never saved. */
 type CatchUp = { userMessageId: string; deadline: number } | 'failed' | null
 
@@ -63,6 +87,11 @@ interface Props {
   onTurnFinish: () => void
   /** Called with the text of the very first message sent in this project. */
   onFirstMessage: (text: string) => void
+  /** Render this source in the browser and describe it, for the agent's inspectModel tool. */
+  onInspect: (code: string, views: InspectView[]) => Promise<InspectModelOutput>
+  /** A markup from the preview to put in the composer, then clear with onMarkupTaken. */
+  markup: PreviewMarkup | null
+  onMarkupTaken: () => void
 }
 
 /** The latest writeOpenscad call whose input has fully arrived. */
@@ -81,6 +110,52 @@ function latestWrite(
       }
     }
   }
+  return null
+}
+
+/** The assistant's parts since the user last wrote, i.e. this turn so far. */
+function turnParts(messages: StudioUIMessage[]): StudioUIMessage['parts'] {
+  const lastUser = messages.findLastIndex((m) => m.role === 'user')
+  return messages.slice(lastUser + 1).flatMap((m) => m.parts)
+}
+
+/**
+ * Continue the turn once the browser has answered an inspection. Limited to
+ * steps that called inspectModel: a turn that only ran server tools and was
+ * cut off by the step limit has ended and must not resubmit itself.
+ */
+function inspectionAnswered({ messages }: { messages: StudioUIMessage[] }): boolean {
+  if (!lastAssistantMessageIsCompleteWithToolCalls({ messages })) return false
+  const parts = messages.at(-1)?.parts ?? []
+  const lastStep = parts.slice(parts.findLastIndex((p) => p.type === 'step-start') + 1)
+  return lastStep.some((p) => p.type === 'tool-inspectModel')
+}
+
+/**
+ * Puts a preview markup into the composer: the annotated snapshot as an
+ * attachment and the pin list as text the user can finish before sending.
+ */
+function MarkupIntake({ markup, onTaken }: { markup: PreviewMarkup | null; onTaken: () => void }) {
+  const controller = usePromptInputController()
+  const attachments = usePromptInputAttachments()
+  const taken = useRef<number | null>(null)
+  useEffect(() => {
+    if (!markup || taken.current === markup.id) return
+    taken.current = markup.id
+    attachments.add([markup.image])
+    if (markup.text) {
+      const current = controller.textInput.value.trim()
+      controller.textInput.setInput(current ? `${current}\n\n${markup.text}` : markup.text)
+    }
+    onTaken()
+    // Land the cursor at the end, where the user writes what to change.
+    requestAnimationFrame(() => {
+      const textarea = document.querySelector<HTMLTextAreaElement>('textarea[name="message"]')
+      if (!textarea) return
+      textarea.focus()
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+    })
+  }, [markup, attachments, controller.textInput, onTaken])
   return null
 }
 
@@ -125,12 +200,35 @@ export function ChatPanel({
   onCode,
   onTurnFinish,
   onFirstMessage,
+  onInspect,
+  markup,
+  onMarkupTaken,
 }: Props) {
+  // Every request, including the ones the chat sends by itself after an
+  // inspection, carries the live editor content: manual edits are only
+  // persisted after a debounce, so the server's copy may be stale.
+  const codeRef = useRef(code)
+  useEffect(() => {
+    codeRef.current = code
+  }, [code])
+
   const transport = useMemo(
     () =>
-      new DefaultChatTransport({
+      new DefaultChatTransport<StudioUIMessage>({
         api: '/api/chat',
-        body: { projectId },
+        prepareSendMessagesRequest: ({ id, messages, body, trigger, messageId }) => ({
+          body: {
+            ...body,
+            id,
+            trigger,
+            messageId,
+            projectId,
+            code: codeRef.current,
+            // Old inspection pictures are dropped here so neither the request
+            // nor the saved history grows with every look the agent takes.
+            messages: withoutOldInspectionImages(messages),
+          },
+        }),
       }),
     [projectId],
   )
@@ -144,11 +242,47 @@ export function ChatPanel({
   const [catchUp, setCatchUp] = useState<CatchUp>(null)
   const catchingUp = catchUp !== null && catchUp !== 'failed'
 
-  const { messages, setMessages, sendMessage, status, error, clearError } =
+  const messagesRef = useRef<StudioUIMessage[]>(initialMessages)
+  /** The id of the newest writeOpenscad call already applied to the editor. */
+  const appliedCallId = useRef<string | null>(latestWrite(initialMessages)?.toolCallId ?? null)
+
+  const { messages, setMessages, sendMessage, addToolOutput, status, error, clearError } =
     useChat<StudioUIMessage>({
       id: projectId,
       messages: initialMessages,
       transport,
+      sendAutomaticallyWhen: inspectionAnswered,
+      // The agent asked to see its work. The render runs here, in the
+      // browser, while the turn stays open; the answer resubmits the turn.
+      onToolCall: async ({ toolCall }) => {
+        if (toolCall.dynamic || toolCall.toolName !== 'inspectModel') return
+        const { toolCallId } = toolCall
+        const looks = turnParts(messagesRef.current).filter((p) => p.type === 'tool-inspectModel')
+        if (looks.length > MAX_INSPECTIONS_PER_TURN) {
+          void addToolOutput({
+            tool: 'inspectModel',
+            toolCallId,
+            state: 'output-error',
+            errorText: 'Inspection limit for this turn reached. Reply to the user with what you have.',
+          })
+          return
+        }
+        // Code the agent wrote moments ago may not have reached the editor yet.
+        const write = latestWrite(messagesRef.current)
+        const source = write && write.toolCallId !== appliedCallId.current ? write.code : codeRef.current
+        try {
+          const output = await onInspect(source, toolCall.input.views ?? DEFAULT_INSPECT_VIEWS)
+          trackEvent('model_inspected', { ok: output.ok })
+          void addToolOutput({ tool: 'inspectModel', toolCallId, output })
+        } catch (err) {
+          void addToolOutput({
+            tool: 'inspectModel',
+            toolCallId,
+            state: 'output-error',
+            errorText: err instanceof Error ? err.message : 'The model could not be inspected.',
+          })
+        }
+      },
       onFinish: ({ isError }) => {
         if (!isError) turn.current = null
         onTurnFinish()
@@ -157,6 +291,10 @@ export function ChatPanel({
       // message list, which makes typing in the editor stutter while the agent writes.
       throttle: 50,
     })
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   useEffect(() => {
     if (status === 'streaming' && turn.current) turn.current.streamed = true
@@ -246,8 +384,7 @@ export function ChatPanel({
 
   // Apply agent-written code to the editor/preview as soon as the tool input
   // has fully streamed in. History that was already applied (anything present
-  // at mount) is skipped by seeding the ref with it.
-  const appliedCallId = useRef<string | null>(latestWrite(initialMessages)?.toolCallId ?? null)
+  // at mount) is skipped by seeding appliedCallId with it.
   useEffect(() => {
     const write = latestWrite(messages)
     if (write && write.toolCallId !== appliedCallId.current) {
@@ -296,9 +433,7 @@ export function ChatPanel({
     }
     // Never the text itself: only whether this opens the conversation.
     trackEvent('prompt_sent', { first: messages.length === 0, images: files.length })
-    // Ship the live editor content with the request: manual edits are only
-    // persisted after a debounce, so the server's copy may be stale.
-    void sendMessage(text ? { text, files } : { files }, { body: { code } })
+    void sendMessage(text ? { text, files } : { files })
   }
 
   return (
@@ -346,6 +481,8 @@ export function ChatPanel({
       </Conversation>
 
       <div className="border-t p-3">
+        <PromptInputProvider>
+        <MarkupIntake markup={markup} onTaken={onMarkupTaken} />
         <PromptInput
           onSubmit={handleSubmit}
           accept="image/*"
@@ -367,6 +504,7 @@ export function ChatPanel({
             <PromptInputSubmit status={catchingUp ? 'submitted' : status} />
           </PromptInputFooter>
         </PromptInput>
+        </PromptInputProvider>
         {attachError && (
           <p className="mt-1.5 text-xs text-destructive">{attachError}</p>
         )}

@@ -9,20 +9,36 @@ import { after } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createStudioAgent, studioTools, type StudioUIMessage } from '@/lib/agents/studio-agent'
 import { guardModelCall, spendGuardTextResponse } from '@/lib/spend-guard'
-import { withoutEmptyMessages } from '@/lib/chat-history'
+import {
+  settleInterruptedInspections,
+  withoutEmptyMessages,
+  withoutOldInspectionImages,
+} from '@/lib/chat-history'
 import { getProjectForChat, saveChat } from '@/lib/db/queries'
 
 // The chat panel's catch-up deadline (TURN_DEADLINE_MS) is derived from this.
 export const maxDuration = 120
 
-/** The most recent complete writeOpenscad code in the given messages, if any. */
-function latestCode(messages: StudioUIMessage[]): string | null {
+/**
+ * The code of the newest complete writeOpenscad call that is not in
+ * `previous`. A turn that inspects its work continues the same assistant
+ * message over several requests, so "written this request" means a call id
+ * the request did not arrive with, not a message after the incoming ones.
+ */
+function codeWrittenSince(previous: StudioUIMessage[], messages: StudioUIMessage[]): string | null {
+  const seen = new Set<string>()
+  for (const message of previous) {
+    for (const part of message.parts) {
+      if (part.type === 'tool-writeOpenscad') seen.add(part.toolCallId)
+    }
+  }
   for (let i = messages.length - 1; i >= 0; i--) {
     const parts = messages[i].parts
     for (let j = parts.length - 1; j >= 0; j--) {
       const part = parts[j]
       if (
         part.type === 'tool-writeOpenscad' &&
+        !seen.has(part.toolCallId) &&
         (part.state === 'input-available' || part.state === 'output-available')
       ) {
         return part.input.code
@@ -53,7 +69,11 @@ export async function POST(req: Request) {
   // The browser still holds the empty reply of a turn that failed, and the SDK
   // rejects a message with no parts, so drop those before validating.
   const validated = validateUIMessages<StudioUIMessage>({
-    messages: Array.isArray(rawMessages) ? withoutEmptyMessages(rawMessages) : rawMessages,
+    // An inspection the browser never answered (the tab closed mid-turn) is
+    // closed as an error so the model API accepts the history.
+    messages: Array.isArray(rawMessages)
+      ? withoutOldInspectionImages(settleInterruptedInspections(withoutEmptyMessages(rawMessages)))
+      : rawMessages,
     tools: studioTools,
   })
   validated.catch(() => {}) // surfaced below; this only avoids an unhandled rejection
@@ -113,10 +133,10 @@ export async function POST(req: Request) {
       await saveChat({
         projectId,
         uiMessages: messages as UIMessage[],
-        // Only persist code written THIS turn. Scanning the whole history
-        // would resurrect an old writeOpenscad on text-only turns and
+        // Only persist code written by THIS request. Scanning the whole
+        // history would resurrect an old writeOpenscad on text-only turns and
         // clobber the user's manual edits.
-        code: latestCode(messages.slice(uiMessages.length) as StudioUIMessage[]),
+        code: codeWrittenSince(uiMessages, messages as StudioUIMessage[]),
       })
     },
   })

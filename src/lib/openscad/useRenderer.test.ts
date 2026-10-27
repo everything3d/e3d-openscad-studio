@@ -98,4 +98,25 @@ describe('renderer worker lifecycle', () => {
     await exported
     expect(analytics.track).not.toHaveBeenCalled()
   })
+
+  it('resolves an inspection with its render and does not render the same source twice', async () => {
+    const renderer = useRenderer()
+    const files: never[] = []
+    const pending = renderer.whenRendered('cube(1);', files)
+    // The studio's debounced preview of the same source is the same job.
+    renderer.render('cube(1);', files)
+    const worker = FakeWorker.instances[0]
+    expect(worker.postMessage).toHaveBeenCalledOnce()
+    worker.emit({ type: 'render', id: 1, ok: true, mesh, log: 'ECHO: 1' })
+    await expect(pending).resolves.toMatchObject({ status: 'done', log: 'ECHO: 1' })
+    // Already shown: answered at once, no new job.
+    await expect(renderer.whenRendered('cube(1);', files)).resolves.toMatchObject({ status: 'done' })
+    expect(worker.postMessage).toHaveBeenCalledOnce()
+  })
+  it('answers an inspection with the failure when the source does not compile', async () => {
+    const renderer = useRenderer()
+    const pending = renderer.whenRendered('cube(;')
+    FakeWorker.instances[0].emit({ type: 'render', id: 1, ok: false, error: 'Parser error', log: '' })
+    await expect(pending).resolves.toMatchObject({ status: 'error', error: 'Parser error', mesh: null })
+  })
 })
