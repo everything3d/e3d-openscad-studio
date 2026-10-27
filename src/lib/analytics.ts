@@ -23,6 +23,10 @@ export interface ProductEvents {
   /** A step towards a print order: the dialog, Shopify checkout, payment, or WhatsApp. */
   order_started: { step: 'opened' | 'checkout' | 'payment' | 'whatsapp' }
   share_created: { replaced: boolean }
+  /** The agent rendered and looked at its own work. `ok` is whether the source compiled. */
+  model_inspected: { ok: boolean }
+  /** A marked-up preview went into the chat composer. */
+  markup_added: { pins: number; drawing: boolean }
 }
 
 /**

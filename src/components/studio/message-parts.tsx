@@ -47,6 +47,36 @@ export function MessageParts({ message }: { message: StudioUIMessage }) {
             </ToolContent>
           </Tool>
         )
+      case 'tool-inspectModel': {
+        const output = part.state === 'output-available' ? part.output : null
+        const size = output?.bounds?.size.map((n) => Number(n.toFixed(1))).join(' × ')
+        return (
+          <Tool key={part.toolCallId} className="my-0">
+            <ToolHeader type={part.type} state={part.state} title="Check the render" />
+            <ToolContent>
+              <div className="space-y-2 p-3 text-xs text-muted-foreground">
+                {part.state === 'output-error' ? (
+                  <p>{part.errorText}</p>
+                ) : !output ? (
+                  <p>Rendering the model to check it…</p>
+                ) : output.ok ? (
+                  <p>Rendered{size ? ` · ${size} mm` : ''}</p>
+                ) : (
+                  <p className="text-destructive">Render failed: {output.error}</p>
+                )}
+                {output?.image && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={output.image}
+                    alt="What the AI saw: the model from several angles"
+                    className="w-full rounded-md border"
+                  />
+                )}
+              </div>
+            </ToolContent>
+          </Tool>
+        )
+      }
       case 'tool-writeOpenscad':
         return (
           <Tool key={part.toolCallId} className="my-0">

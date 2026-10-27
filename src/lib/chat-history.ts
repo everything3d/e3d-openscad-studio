@@ -21,3 +21,58 @@ export function isEmptyMessage(message: unknown): boolean {
 export function withoutEmptyMessages<T>(messages: T[]): T[] {
   return messages.some(isEmptyMessage) ? messages.filter((m) => !isEmptyMessage(m)) : messages
 }
+
+type LooseMessage = { parts?: unknown }
+type LoosePart = { type?: unknown; state?: unknown; output?: unknown }
+
+/** Rewrite the inspectModel parts of every message but the last; other messages pass through unchanged. */
+function mapEarlierInspections<T>(messages: T[], map: (part: LoosePart) => LoosePart | null): T[] {
+  let changed = false
+  const out = messages.map((message, i) => {
+    const parts = (message as LooseMessage | null)?.parts
+    if (i === messages.length - 1 || !Array.isArray(parts)) return message
+    let partsChanged = false
+    const next = parts.map((part: LoosePart) => {
+      if (part?.type !== 'tool-inspectModel') return part
+      const mapped = map(part)
+      if (!mapped) return part
+      partsChanged = true
+      return mapped
+    })
+    if (!partsChanged) return message
+    changed = true
+    return { ...message, parts: next }
+  })
+  return changed ? out : messages
+}
+
+/**
+ * An inspection runs in the browser, so a tab closed mid-turn leaves its call
+ * with no result, and the model API rejects a tool call without one. Once a
+ * later message exists that call can never finish, so close it as an error.
+ */
+export function settleInterruptedInspections<T>(messages: T[]): T[] {
+  return mapEarlierInspections(messages, (part) =>
+    part.state === 'input-streaming' || part.state === 'input-available'
+      ? {
+          ...part,
+          state: 'output-error',
+          errorText: 'The inspection was interrupted before it finished.',
+        }
+      : null,
+  )
+}
+
+/**
+ * Inspection pictures are only useful to the turn that took them, and the
+ * whole history is re-sent and saved every turn. Keep the facts, drop the
+ * picture, everywhere but the latest message.
+ */
+export function withoutOldInspectionImages<T>(messages: T[]): T[] {
+  return mapEarlierInspections(messages, (part) => {
+    const output = part.output as { image?: unknown } | undefined
+    return part.state === 'output-available' && typeof output?.image === 'string'
+      ? { ...part, output: { ...output, image: null } }
+      : null
+  })
+}

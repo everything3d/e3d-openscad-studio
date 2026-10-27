@@ -10,7 +10,9 @@ import { Button } from '@/components/ui/button'
 import { useRenderer } from '@/lib/openscad/useRenderer'
 import { meshTo3MF, meshToSnapmakerU1Project } from '@/lib/openscad/threemf'
 import { downloadEvent, trackEvent, type ProductEvents } from '@/lib/analytics'
-import type { ExportFormat } from './preview'
+import type { ExportFormat, MarkupResult } from './preview'
+import type { PreviewMarkup } from './chat-panel'
+import type { InspectModelOutput, InspectView } from '@/lib/tools/inspect-model'
 import {
   provisionalNameBase,
   type CanonicalDetail,
@@ -87,7 +89,16 @@ export function Studio({
   const openSource = useRef<ProductEvents['studio_opened']['source']>('existing')
   const lastOpenedId = useRef<string | null>(null)
 
-  const { state: renderState, render, reset: resetRenderer, exportModel, warmup } = useRenderer()
+  const {
+    state: renderState,
+    render,
+    whenRendered,
+    reset: resetRenderer,
+    exportModel,
+    warmup,
+  } = useRenderer()
+  /** A preview markup on its way into the chat composer. */
+  const [markup, setMarkup] = useState<PreviewMarkup | null>(null)
 
   // ---- server helpers ------------------------------------------------------
   const refreshList = useCallback(async () => {
@@ -208,6 +219,40 @@ export function Studio({
     setProject((p) => (p ? { ...p, code } : p))
     setRightTab('preview')
   }, [])
+
+  // The files the preview renders with, for inspections the chat starts.
+  const filesRef = useRef<WorkspaceFile[]>([])
+  useEffect(() => {
+    filesRef.current = project?.files ?? []
+  }, [project?.files])
+
+  /** The agent asked to look at its work: render this source and describe it. */
+  const handleInspect = useCallback(
+    async (code: string, views: InspectView[]): Promise<InspectModelOutput> => {
+      const result = await whenRendered(code, filesRef.current)
+      const { importantLogLines, measureMesh, renderModelViews } = await import('./model-views')
+      const messages = importantLogLines(result.log)
+      if (result.status !== 'done' || !result.mesh) {
+        return { ok: false, error: result.error ?? 'The model did not render.', messages }
+      }
+      return {
+        ok: true,
+        messages,
+        ...measureMesh(result.mesh),
+        views,
+        image: renderModelViews(result.mesh, views),
+      }
+    },
+    [whenRendered],
+  )
+
+  /** A marked-up preview: hand it to the composer, and show the chat on phones. */
+  const handleMarkup = useCallback((result: MarkupResult) => {
+    setMarkup({ id: Date.now(), text: result.text, image: result.image })
+    setWorkspaceExpanded(false)
+    trackEvent('markup_added', { pins: result.pins, drawing: result.drawing })
+  }, [])
+  const handleMarkupTaken = useCallback(() => setMarkup(null), [])
 
   const handleFilesChange = useCallback((files: WorkspaceFile[]) => {
     setProject((p) => {
@@ -437,6 +482,9 @@ export function Studio({
                 code={project.code}
                 initialMessages={project.messages}
                 onCode={handleAgentCode}
+                onInspect={handleInspect}
+                markup={markup}
+                onMarkupTaken={handleMarkupTaken}
                 onTurnFinish={() => void refreshList()}
                 onFirstMessage={(text) => {
                   if (provisionalNameBase(project.name) !== null) {
@@ -489,6 +537,7 @@ export function Studio({
                   render={renderState}
                   onExport={(f) => void handleExport(f)}
                   onThumbnailReady={setThumbnail}
+                  onMarkup={handleMarkup}
                   onOrder={() => {
                     setOrderOpen(true)
                     trackEvent('order_started', { step: 'opened' })
