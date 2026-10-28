@@ -101,8 +101,11 @@ describe('built-in canonical catalog', () => {
     expect(figurine.code).toContain('show_heart = true')
     expect(award.code).toContain('line3 = "With heartfelt gratitude"')
 
-    // The podium plate fits the name and grows the taglines to fill the width.
+    // The podium carries a curved pocket sized from the plate, which fits the
+    // name and grows the taglines to fill the width.
     const podium = byId('builtin-podium-nameplate')
+    expect(podium.code).toContain('module podium()')
+    expect(podium.code).toContain('module wrapped_part(')
     expect(podium.code).toContain('tagFitSize')
     expect(podium.code).toContain('nameFont = "Cutive"')
     expect(podium.code).toContain('tagFont = "Akaya Kanadaka"')
