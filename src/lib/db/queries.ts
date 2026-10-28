@@ -43,6 +43,11 @@ interface ProjectArtifacts {
 
 interface ProjectSnapshot extends ProjectArtifacts {
   messages: UIMessage[]
+  /**
+   * JPEG data URL of the render at share time, shown as the link's social
+   * preview. Never copied into imported projects.
+   */
+  previewImage?: string | null
 }
 
 /** Load mutable design artifacts without bringing conversation history along. */
@@ -926,11 +931,12 @@ export async function getActiveProjectShare(
 export async function replaceProjectShare(
   projectId: string,
   userId: string,
+  previewImage: string | null = null,
 ): Promise<ProjectShareLink | null> {
   return db.transaction(async (tx) => {
     const snapshot = await loadProjectSnapshot(tx, projectId, userId)
     if (!snapshot) return null
-    return writeProjectShare(tx, projectId, userId, snapshot)
+    return writeProjectShare(tx, projectId, userId, { ...snapshot, previewImage })
   })
 }
 
@@ -1023,6 +1029,15 @@ export async function getProjectSharePreview(token: string): Promise<ProjectShar
     .where(eq(projectShares.token, token))
 
   return share ? { ...share, createdAt: share.createdAt.getTime() } : null
+}
+
+/** The render captured when the link was made, or null for older links and order links. */
+export async function getProjectSharePreviewImage(token: string): Promise<string | null> {
+  const [share] = await db
+    .select({ image: sql<string | null>`${projectShares.snapshot}->>'previewImage'` })
+    .from(projectShares)
+    .where(eq(projectShares.token, token))
+  return share?.image ?? null
 }
 
 /**

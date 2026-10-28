@@ -1,3 +1,5 @@
+import type { Metadata } from 'next'
+import { cache } from 'react'
 import { auth } from '@clerk/nextjs/server'
 import { BoxIcon, GitForkIcon, LockKeyholeIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -8,9 +10,29 @@ export const dynamic = 'force-dynamic'
 
 type Props = { params: Promise<{ token: string }> }
 
+// Metadata and the page both need the share; read it once per request.
+const loadShare = cache(getProjectSharePreview)
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { token } = await params
+  const share = await loadShare(token)
+  if (!share) return { title: 'Share link unavailable — E3D Studio' }
+
+  const title = `${share.name} — E3D Studio`
+  const description = 'Open a private copy of this 3D design with its conversation, OpenSCAD code, and files.'
+  // og:image comes from opengraph-image.tsx; Twitter/X reuses it, but only
+  // shows it large when asked to.
+  return {
+    title,
+    description,
+    openGraph: { title, description, type: 'website', siteName: 'E3D Studio' },
+    twitter: { card: 'summary_large_image', title, description },
+  }
+}
+
 export default async function SharedProjectPage({ params }: Props) {
   const { token } = await params
-  const [share, { userId }] = await Promise.all([getProjectSharePreview(token), auth()])
+  const [share, { userId }] = await Promise.all([loadShare(token), auth()])
 
   if (!share) {
     return (
