@@ -28,9 +28,11 @@ interface ShareLink {
 
 interface Props {
   projectId: string
+  /** Current render as a JPEG data URL; becomes the link's chat/social preview. */
+  thumbnail: string | null
 }
 
-export function ShareProjectDialog({ projectId }: Props) {
+export function ShareProjectDialog({ projectId, thumbnail }: Props) {
   const [open, setOpen] = useState(false)
   const [share, setShare] = useState<ShareLink | null>(null)
   const [origin, setOrigin] = useState('')
@@ -73,7 +75,11 @@ export function ShareProjectDialog({ projectId }: Props) {
     setError(null)
     setCopied(false)
     try {
-      const res = await fetch(`/api/projects/${projectId}/share`, { method: 'POST' })
+      const res = await fetch(`/api/projects/${projectId}/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ previewImage: thumbnail }),
+      })
       if (!res.ok) throw new Error('Could not create a share link.')
       const data = (await res.json()) as { share: ShareLink }
       setShare(data.share)

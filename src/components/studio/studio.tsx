@@ -451,7 +451,7 @@ export function Studio({
                 onPublished={handlePublished}
               />
             )}
-            {project && <ShareProjectDialog projectId={project.id} />}
+            {project && <ShareProjectDialog projectId={project.id} thumbnail={thumbnail} />}
             <UserButton />
           </div>
         </header>
