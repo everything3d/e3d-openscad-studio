@@ -18,6 +18,7 @@ import {
   printOrders,
   projects,
   projectShares,
+  projectThumbnails,
   workspaceFiles,
 } from './schema'
 import {
@@ -1262,6 +1263,8 @@ export interface AdminChatSummary {
   messageCount: number
   /** Text of the first user message, for chats still named "Untitled". */
   firstPrompt: string | null
+  /** When the studio last stored a render of it; null if it never has. */
+  thumbnailAt: Date | null
   createdAt: Date
   updatedAt: Date
 }
@@ -1288,12 +1291,19 @@ export async function listAllChats({
         id: projects.id,
         name: projects.name,
         userId: projects.userId,
-        messageCount: sql<number>`(select count(*)::int from ${messages} where ${messages.projectId} = ${projects.id})`,
+        // NB: ${projects}.id, not ${projects.id}. In a single-table select
+        // drizzle renders select-list columns unqualified ("id"), which inside
+        // these subqueries resolves to messages.id and matches nothing — every
+        // chat showed 0 messages. The where clause is qualified and unaffected.
+        messageCount: sql<number>`(select count(*)::int from ${messages} m where m.project_id = ${projects}.id)`,
         firstPrompt: sql<string | null>`(
           select p->>'text' from ${messages} m, jsonb_array_elements(m.parts) p
-          where m.project_id = ${projects.id} and m.role = 'user' and p->>'type' = 'text'
+          where m.project_id = ${projects}.id and m.role = 'user' and p->>'type' = 'text'
           order by m.seq limit 1
         )`,
+        thumbnailAt: sql<Date | null>`(
+          select t.updated_at from ${projectThumbnails} t where t.project_id = ${projects}.id
+        )`.mapWith((v) => (v == null ? null : new Date(v))),
         createdAt: projects.createdAt,
         updatedAt: projects.updatedAt,
       })
@@ -1307,6 +1317,40 @@ export async function listAllChats({
   return { chats: rows, total: totalRow?.total ?? 0 }
 }
 
+/**
+ * Store the studio's latest render of a project the user owns. Does not touch
+ * the project's updatedAt: reopening a chat re-renders it, and that alone
+ * shouldn't float it to the top of anyone's recent list.
+ */
+export async function saveProjectThumbnail(
+  projectId: string,
+  userId: string,
+  image: string,
+): Promise<boolean> {
+  const [owned] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
+  if (!owned) return false
+  await db
+    .insert(projectThumbnails)
+    .values({ projectId, image })
+    .onConflictDoUpdate({
+      target: projectThumbnails.projectId,
+      set: { image, updatedAt: sql`now()` },
+    })
+  return true
+}
+
+/** A project's latest stored render, regardless of owner. Staff desk only. */
+export async function getProjectThumbnailForAdmin(projectId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ image: projectThumbnails.image })
+    .from(projectThumbnails)
+    .where(eq(projectThumbnails.projectId, projectId))
+  return row?.image ?? null
+}
+
 /** A project's header fields for the staff desk, regardless of owner. */
 export async function getChatForAdmin(id: string) {
   const [project] = await db
@@ -1315,6 +1359,9 @@ export async function getChatForAdmin(id: string) {
       name: projects.name,
       userId: projects.userId,
       code: projects.code,
+      thumbnailAt: sql<Date | null>`(
+        select t.updated_at from ${projectThumbnails} t where t.project_id = ${projects}.id
+      )`.mapWith((v) => (v == null ? null : new Date(v))),
       createdAt: projects.createdAt,
       updatedAt: projects.updatedAt,
     })

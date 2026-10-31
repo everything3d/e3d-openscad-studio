@@ -44,6 +44,14 @@ export default async function AdminChatPage({ params }: Props) {
           </AdminHeader>
         </div>
 
+        {chat.thumbnailAt && (
+          <img
+            src={`/admin/chats/${chat.id}/thumbnail?v=${chat.thumbnailAt.getTime()}`}
+            alt={`Latest render of ${chat.name}`}
+            className="mb-8 aspect-[8/5] w-full rounded-xl border bg-muted object-contain"
+          />
+        )}
+
         <div className="flex flex-col gap-8">
           {messages.map((message) => (
             <Message from={message.role} key={message.id}>

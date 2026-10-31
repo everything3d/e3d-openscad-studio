@@ -186,6 +186,26 @@ export function Studio({
     if (renderState.status !== 'done') setThumbnail(null)
   }, [renderState.status])
 
+  // Keep the server's copy of each workspace's latest render, so the staff
+  // desk can show what a chat produced (rendering only happens here, in the
+  // browser). Debounced so live edits don't upload every frame; the cleanup
+  // drops a pending upload when the workspace changes underneath it.
+  const projectId = project?.id
+  const uploadedThumbnails = useRef(new Map<string, string>())
+  useEffect(() => {
+    if (!projectId || !thumbnail) return
+    if (uploadedThumbnails.current.get(projectId) === thumbnail) return
+    const timer = setTimeout(() => {
+      uploadedThumbnails.current.set(projectId, thumbnail)
+      fetch(`/api/projects/${projectId}/thumbnail`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: thumbnail }),
+      }).catch(() => uploadedThumbnails.current.delete(projectId))
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [projectId, thumbnail])
+
   // ---- live render (debounced) --------------------------------------------
   useEffect(() => {
     if (!project) return

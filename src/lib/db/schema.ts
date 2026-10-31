@@ -119,6 +119,20 @@ export const workspaceFiles = pgTable(
 )
 
 /**
+ * The studio's latest render of a project, as a ~30–60 KB JPEG data URL, so
+ * the staff desk can show what each chat produced. The browser renders the
+ * model (OpenSCAD wasm) and uploads this after a successful render. Kept out
+ * of `projects` so ordinary project reads don't haul the image along.
+ */
+export const projectThumbnails = pgTable('project_thumbnails', {
+  projectId: text('project_id')
+    .primaryKey()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  image: text('image').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+/**
  * A frozen, capability-link snapshot of a project. Replacing or disabling a
  * link deletes this row; projects imported from it remain independent.
  */
@@ -198,4 +212,5 @@ export type MessageRow = typeof messages.$inferSelect
 export type WorkspaceFileRow = typeof workspaceFiles.$inferSelect
 export type ProjectShareRow = typeof projectShares.$inferSelect
 export type ModelCallRow = typeof modelCalls.$inferSelect
+export type ProjectThumbnailRow = typeof projectThumbnails.$inferSelect
 export type PrintOrderRow = typeof printOrders.$inferSelect

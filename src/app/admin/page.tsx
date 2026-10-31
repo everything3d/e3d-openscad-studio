@@ -58,9 +58,10 @@ export default async function AdminPage({ searchParams }: Props) {
         </AdminHeader>
 
         <div className="overflow-x-auto rounded-xl border bg-card">
-          <table className="w-full min-w-[760px] text-left text-sm">
+          <table className="w-full min-w-[880px] text-left text-sm">
             <thead className="border-b text-xs text-muted-foreground">
               <tr>
+                <th className="w-28 px-4 py-3 font-medium">Render</th>
                 <th className="px-4 py-3 font-medium">Chat</th>
                 <th className="px-4 py-3 font-medium">User</th>
                 <th className="px-4 py-3 text-right font-medium">Messages</th>
@@ -70,6 +71,25 @@ export default async function AdminPage({ searchParams }: Props) {
             <tbody className="divide-y">
               {chats.map((chat) => (
                 <tr key={chat.id} className="align-top hover:bg-muted/30">
+                  <td className="px-4 py-3">
+                    <Link
+                      href={`/admin/chats/${chat.id}`}
+                      className="block aspect-[8/5] w-24 overflow-hidden rounded-md border bg-muted"
+                    >
+                      {chat.thumbnailAt ? (
+                        <img
+                          src={`/admin/chats/${chat.id}/thumbnail?v=${chat.thumbnailAt.getTime()}`}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
+                          no render
+                        </span>
+                      )}
+                    </Link>
+                  </td>
                   <td className="max-w-md px-4 py-3">
                     <Link
                       href={`/admin/chats/${chat.id}`}
