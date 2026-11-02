@@ -84,7 +84,7 @@ const FEATURES = [
   },
 ]
 
-const FAQS = [
+const FAQS: { q: string; a: string; href?: string; linkText?: string }[] = [
   {
     q: 'Do I need to know CAD or coding?',
     a: 'No. You describe what you want in everyday words and the AI does the modelling. You can ask for changes the same way.',
@@ -96,6 +96,12 @@ const FAQS = [
   {
     q: 'Does it cost anything?',
     a: 'Designing is free. Create an account in a few seconds — no card needed.',
+  },
+  {
+    q: 'Can I sell what I make here?',
+    a: 'Yes. Designs you create are yours to print, sell and share, including for your 3D-printing business. No attribution, no fee. Starter designs are CC0 as well.',
+    href: '/license',
+    linkText: 'Read the license.',
   },
   {
     q: 'What if I want it printed for me?',
@@ -321,7 +327,17 @@ export default async function LandingPage() {
                   +
                 </span>
               </summary>
-              <p className="mt-3 text-sm leading-relaxed text-neutral-500">{faq.a}</p>
+              <p className="mt-3 text-sm leading-relaxed text-neutral-500">
+                {faq.a}
+                {faq.href && (
+                  <>
+                    {' '}
+                    <Link href={faq.href} className="underline underline-offset-4 hover:text-neutral-900">
+                      {faq.linkText}
+                    </Link>
+                  </>
+                )}
+              </p>
             </details>
           ))}
         </div>
@@ -352,14 +368,19 @@ export default async function LandingPage() {
             <Image src="/brand/e3d-mark.png" alt="" width={20} height={20} />
             <span className="uppercase tracking-[0.18em]">Everything 3D</span>
           </span>
-          <a
-            href="https://everything3dindia.com"
-            className="hover:text-neutral-900"
-            target="_blank"
-            rel="noreferrer"
-          >
-            everything3dindia.com
-          </a>
+          <span className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+            <Link href="/license" className="hover:text-neutral-900">
+              Designs are free for commercial use
+            </Link>
+            <a
+              href="https://everything3dindia.com"
+              className="hover:text-neutral-900"
+              target="_blank"
+              rel="noreferrer"
+            >
+              everything3dindia.com
+            </a>
+          </span>
         </div>
       </footer>
 

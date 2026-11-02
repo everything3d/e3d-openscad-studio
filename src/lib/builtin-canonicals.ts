@@ -12,6 +12,12 @@ import { TWO_LAYER_NAME_PIGGY_BANK_SCAD } from './builtin-scad/two-layer-name-pi
 import { TWO_NAME_ILLUSION_SCAD } from './builtin-scad/two-name-illusion'
 import type { WorkspaceFile } from './types'
 
+/**
+ * The built-in canonical designs (and the .scad sources in ./builtin-scad) are
+ * authored by Everything 3D and released under CC0 1.0 Universal
+ * (https://creativecommons.org/publicdomain/zero/1.0/), so users may print,
+ * sell and redistribute them and their derivatives freely. See /license.
+ */
 export const SYSTEM_CANONICAL_OWNER_ID = 'system:e3d'
 
 export interface BuiltInCanonical {

@@ -567,6 +567,15 @@ export function Preview({ render, onExport, onThumbnailReady, onOrder, onMarkup 
                 Snapmaker U1
               </DropdownMenuItem>
             </DropdownMenuGroup>
+            <a
+              href="/license"
+              target="_blank"
+              rel="noreferrer"
+              className="block px-2 pb-1.5 pt-1 text-[11px] leading-4 text-muted-foreground hover:text-foreground"
+              title="Designs you make here are free to print, sell and share"
+            >
+              Yours to print and sell · license
+            </a>
           </DropdownMenuContent>
         </DropdownMenu>
         <span

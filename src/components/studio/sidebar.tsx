@@ -258,6 +258,17 @@ export function Sidebar({
       {!collapsed && (
         <div className="border-t p-3 text-xs leading-5 text-muted-foreground">
           Canonical designs stay unchanged. Every derivative gets an independent workspace.
+          <div className="mt-1">
+            Everything you make here is yours to print and sell.{' '}
+            <a
+              href="/license"
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              License
+            </a>
+          </div>
         </div>
       )}
     </aside>

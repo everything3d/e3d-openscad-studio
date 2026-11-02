@@ -34,6 +34,17 @@ real time.
   user can open the link as a private, independently editable copy with the full
   conversation, source, and workspace files.
 
+## Licensing of generated designs
+
+Designs, OpenSCAD code and exported STL/3MF files that users create in the studio are
+theirs, free for personal and commercial use (selling prints, selling files, client
+work), with no attribution required. Everything 3D waives any rights it might hold in
+them under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/), and the
+built-in starter designs in `src/lib/builtin-scad/` are released under CC0 1.0 as well.
+The public `/license` page states this in plain language; the landing page FAQ, the
+studio sidebar, the download menu and the agent's instructions all point there. The
+studio software itself and the Everything 3D branding are not covered by this grant.
+
 ## Architecture
 
 ```
