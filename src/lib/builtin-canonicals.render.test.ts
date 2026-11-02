@@ -60,9 +60,10 @@ const VARIANTS: Record<string, Record<string, string | boolean>[]> = {
   'builtin-figurine-display-base': [{ show_assembled: true, two_sided: true }],
   'builtin-award-plaque-base': [{ show_assembled: true }, { line3: '' }],
   'builtin-podium-nameplate': [
+    { showAssembled: true },
     { tagline2: 'Coffee first, meetings later' },
     { tagline1: '', tagline2: '' },
-    { name: 'Venkataraman Subramaniam Krishnamurthy' },
+    { name: 'Venkataraman Subramaniam Krishnamurthy', pocketCount: 2, figurineBaseDiameter: 0 },
   ],
   'builtin-two-name-illusion': [{ frontName: 'ANNA', sideName: 'LEO' }],
   'builtin-mini-barbell': [
