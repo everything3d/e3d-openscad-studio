@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   __clearTokenCache,
+  buildDraftOrderLineItem,
   createDraftOrder,
   isOrderingEnabled,
   shopifyConfig,
@@ -49,6 +50,7 @@ beforeEach(() => {
     'SHOPIFY_ADMIN_ACCESS_TOKEN',
     'SHOPIFY_CLIENT_ID',
     'SHOPIFY_CLIENT_SECRET',
+    'SHOPIFY_CUSTOM_PRINT_VARIANT_ID',
   ]) {
     delete process.env[key]
   }
@@ -135,6 +137,68 @@ describe('createDraftOrder', () => {
     expect(line.requiresShipping).toBe(true)
     // A custom line item must not reference a catalog variant.
     expect(line).not.toHaveProperty('variantId')
+  })
+
+  describe('with SHOPIFY_CUSTOM_PRINT_VARIANT_ID set', () => {
+    const VARIANT = 'gid://shopify/ProductVariant/67969909227822'
+
+    it('attaches the line to the catalog variant and overrides its price', async () => {
+      process.env.SHOPIFY_CUSTOM_PRINT_VARIANT_ID = VARIANT
+      const fetchMock = mockShopify(OK_RESPONSE)
+      await createDraftOrder(
+        {
+          title: '3D print \u2014 Bank',
+          priceInr: 427,
+          note: 'n',
+          customAttributes: [{ key: 'Design', value: 'Bank' }],
+        },
+        CREDENTIALS,
+      )
+
+      const { input } = sentBody(fetchMock).variables
+      expect(input.lineItems).toEqual([
+        {
+          variantId: VARIANT,
+          quantity: 1,
+          // On a variant line, priceOverride is what replaces the catalog price.
+          priceOverride: { amount: '427.00', currencyCode: 'INR' },
+          customAttributes: [{ key: 'Design', value: 'Bank' }],
+        },
+      ])
+      // Custom-line-only fields are ignored by Shopify on a variant line; do
+      // not send them, so nothing suggests the title survives.
+      const [line] = input.lineItems
+      expect(line).not.toHaveProperty('originalUnitPriceWithCurrency')
+      expect(line).not.toHaveProperty('title')
+      expect(line).not.toHaveProperty('requiresShipping')
+      // Order-level fields are unchanged.
+      expect(input.presentmentCurrencyCode).toBe('INR')
+      expect(input.tags).toContain('e3d-studio')
+      expect(input.note).toBe('n')
+    })
+
+    it('ignores a blank value and falls back to a custom line item', () => {
+      process.env.SHOPIFY_CUSTOM_PRINT_VARIANT_ID = '   '
+      const line = buildDraftOrderLineItem({ title: 'Bank', priceInr: 427 })
+      expect(line).not.toHaveProperty('variantId')
+      expect(line).toHaveProperty('originalUnitPriceWithCurrency')
+    })
+  })
+
+  it('builds the unchanged custom line item when the variant is unset', () => {
+    expect(
+      buildDraftOrderLineItem({
+        title: 'Bank',
+        priceInr: 427,
+        customAttributes: [{ key: 'Design ID', value: 'proj_1' }],
+      }),
+    ).toEqual({
+      title: 'Bank',
+      quantity: 1,
+      originalUnitPriceWithCurrency: { amount: '427.00', currencyCode: 'INR' },
+      requiresShipping: true,
+      customAttributes: [{ key: 'Design ID', value: 'proj_1' }],
+    })
   })
 
   it('passes the note, tag and measurements through for the shop to check', async () => {

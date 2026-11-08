@@ -3,8 +3,10 @@
  * order the customer can pay for.
  *
  * Draft orders are the right primitive here because every print is priced from
- * its own geometry. There is no product variant to add to a cart — the line
- * item's price is computed per order. Shopify returns an invoice URL, the
+ * its own geometry, so the line item's price is computed per order rather than
+ * taken from a cart. The line either references the "Custom 3D Printing"
+ * catalog variant with its price overridden (so review apps can attach to it)
+ * or, when that variant is not configured, is a custom line item. Shopify returns an invoice URL, the
  * customer pays through normal Shopify checkout, and the shop sees the order
  * with the design details attached.
  *
@@ -238,30 +240,61 @@ export interface DraftOrder {
   invoiceUrl: string | null
 }
 
+/**
+ * The catalog variant studio orders are attached to, or null to send a custom
+ * line item instead.
+ *
+ * Review apps (Air Product Reviews) attach a review to a product, and a custom
+ * line item has no product behind it, so orders placed that way can never be
+ * reviewed. Pointing every studio order at one "Custom 3D Printing" variant
+ * fixes that while the price stays per-order.
+ */
+function customPrintVariantId(): string | null {
+  const raw = process.env.SHOPIFY_CUSTOM_PRINT_VARIANT_ID?.trim()
+  return raw ? raw : null
+}
+
+/**
+ * The single line item for a print.
+ *
+ * Exported for tests. Two shapes, depending on SHOPIFY_CUSTOM_PRINT_VARIANT_ID:
+ *
+ * - Variant set: reference the catalog variant and replace its price with
+ *   `priceOverride`. Shopify ignores `title` and `requiresShipping` here (the
+ *   line shows the product's title, shipping comes from the variant), so every
+ *   design detail has to travel in `customAttributes`.
+ * - Variant unset: a custom line item whose price is set outright with
+ *   `originalUnitPriceWithCurrency`. `priceOverride` looks right but only
+ *   replaces a catalog variant's price: on a custom line item Shopify ignores
+ *   it and the print goes through at ₹0.
+ */
+export function buildDraftOrderLineItem(
+  input: Pick<CreateDraftOrderInput, 'title' | 'priceInr' | 'customAttributes'>,
+  variantId: string | null = customPrintVariantId(),
+): Record<string, unknown> {
+  const price = { amount: input.priceInr.toFixed(2), currencyCode: CURRENCY }
+  const customAttributes = input.customAttributes ?? []
+
+  if (variantId) {
+    return { variantId, quantity: 1, priceOverride: price, customAttributes }
+  }
+
+  return {
+    title: input.title,
+    quantity: 1,
+    originalUnitPriceWithCurrency: price,
+    requiresShipping: true,
+    customAttributes,
+  }
+}
+
 export async function createDraftOrder(
   input: CreateDraftOrderInput,
   config: ShopifyConfig,
 ): Promise<DraftOrder> {
   const data = await adminGraphQl<DraftOrderCreateResult>(config, DRAFT_ORDER_CREATE, {
     input: {
-      lineItems: [
-        {
-          title: input.title,
-          quantity: 1,
-          // Every print is priced from its own geometry, so there is no
-          // catalog variant to reference — this is a custom line item whose
-          // price is set outright. That is `originalUnitPriceWithCurrency`.
-          // `priceOverride` looks right but only replaces a catalog variant's
-          // price: on a custom line item Shopify ignores it and the print
-          // goes through at ₹0.
-          originalUnitPriceWithCurrency: {
-            amount: input.priceInr.toFixed(2),
-            currencyCode: CURRENCY,
-          },
-          requiresShipping: true,
-          customAttributes: input.customAttributes ?? [],
-        },
-      ],
+      lineItems: [buildDraftOrderLineItem(input)],
       note: input.note,
       presentmentCurrencyCode: CURRENCY,
       tags: ['e3d-studio'],
