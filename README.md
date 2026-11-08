@@ -115,6 +115,15 @@ npm run db:migrate   # apply migrations
 3. Run migrations against the production database: `POSTGRES_URL=... npm run db:migrate`.
 4. Canonical designs form a shared library for every signed-in user. Their owner
    remains the only account that can edit, version, or archive them.
+5. Optional: online ordering through Shopify draft orders. Set
+   `SHOPIFY_STORE_DOMAIN` plus credentials (see `.env.example`). To attach studio
+   orders to a catalog product so review apps (Air Product Reviews) can collect
+   reviews for them, also set `SHOPIFY_CUSTOM_PRINT_VARIANT_ID` to the variant GID
+   of the "Custom 3D Printing" product (SKU `E3D-CUSTOM`), e.g.
+   `gid://shopify/ProductVariant/67969909227822`. The product must be active.
+   Each order then references that variant with its price overridden per order,
+   and the line shows the product's title, so design details travel as line-item
+   properties. Leave it unset to send a custom line item instead.
 
 ## Canonical and derivative workflow
 
