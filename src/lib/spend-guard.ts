@@ -5,7 +5,7 @@ import { modelCalls } from './db/schema'
 /**
  * A spend guard, not a usage quota.
  *
- * Every model-calling route bills the OpenRouter account, so an open sign-up
+ * Every model-calling route bills the Claude API account, so an open sign-up
  * means any account can in principle run the agent in a loop until the card
  * behind that key is empty. These limits exist only to stop that. They are
  * deliberately far above anything a person can reach by using the studio hard

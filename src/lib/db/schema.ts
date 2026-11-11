@@ -144,7 +144,7 @@ export const projectShares = pgTable('project_shares', {
 
 /**
  * One row per model-calling request, used only to keep a runaway script from
- * draining the OpenRouter account. Rows older than the longest window are
+ * draining the Claude API account. Rows older than the longest window are
  * pruned on write, so this table stays proportional to recent activity rather
  * than to total usage. It is a spend guard, not analytics: nothing here
  * identifies a project, a prompt, or a response.

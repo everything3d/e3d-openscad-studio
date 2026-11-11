@@ -1,5 +1,5 @@
 import { ToolLoopAgent, isStepCount, type InferAgentUIMessage } from 'ai'
-import { studioModel } from '../ai/openrouter'
+import { studioModel, studioModelOptions } from '../ai/models'
 import { createWriteOpenscadTool } from '../tools/write-openscad'
 import { createReadOpenscadTool } from '../tools/read-openscad'
 import { searchFontsTool } from '../tools/search-fonts'
@@ -41,17 +41,30 @@ export function createStudioAgent(
 ) {
   const source = { code: currentCode }
   return new ToolLoopAgent({
-    // Override with STUDIO_MODEL for local testing (any OpenRouter model id).
+    // Override with STUDIO_MODEL for local testing (any Claude API model id).
     model: studioModel(),
-    instructions:
-      `${BASE_INSTRUCTIONS}\n\n` +
-      `Current OpenSCAD source for this project:\n\n\`\`\`scad\n${currentCode}\n\`\`\`\n\n` +
+    providerOptions: studioModelOptions(),
+    // Two system messages: the rules never change, so they (and the tool
+    // definitions before them) are marked as a prompt-cache prefix; the
+    // per-request source and file list follow, outside it.
+    instructions: [
+      {
+        role: 'system',
+        content: BASE_INSTRUCTIONS,
+        providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } },
+      },
+      {
+        role: 'system',
+        content:
+          `Current OpenSCAD source for this project:\n\n\`\`\`scad\n${currentCode}\n\`\`\`\n\n` +
       (fileNames.length
         ? `Workspace files available to import(): ${fileNames.join(', ')}`
         : 'This project has no workspace files.') +
       (modificationGuide
         ? `\n\nDesign-specific guidance for this canonical version:\n${modificationGuide}`
         : ''),
+      },
+    ],
     tools: {
       readOpenscad: createReadOpenscadTool(source),
       writeOpenscad: createWriteOpenscadTool(source),

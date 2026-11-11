@@ -35,7 +35,7 @@ function connect(): Db {
  * at import time made a production build require a live database URL — which
  * broke clean clones and any CI without the secret. Deferring to first query
  * keeps a missing URL a runtime error on the request that needed the database,
- * which is also how the OpenRouter key behaves.
+ * which is also how the Claude API key behaves.
  */
 export const db: Db = new Proxy({} as Db, {
   get(_target, property, receiver) {

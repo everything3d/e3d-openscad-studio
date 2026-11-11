@@ -1,5 +1,5 @@
 import { generateText } from 'ai'
-import { namingModel } from '../ai/openrouter'
+import { namingModel, shortTaskOptions } from '../ai/models'
 
 const SYSTEM = `You name projects in a 3D modeling studio where users describe parts and the AI writes OpenSCAD code.
 
@@ -34,8 +34,10 @@ export async function generateProjectName(
 
   try {
     const { text } = await generateText({
-      // Naming is a one-liner: use the cheapest fast model, overridable.
       model: namingModel(),
+      providerOptions: shortTaskOptions,
+      // A name is a few words; the rest is headroom for thinking, which counts.
+      maxOutputTokens: 2_000,
       system: baseTitle ? DERIVATIVE_SYSTEM : SYSTEM,
       prompt,
     })

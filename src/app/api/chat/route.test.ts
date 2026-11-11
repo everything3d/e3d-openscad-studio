@@ -18,10 +18,16 @@ vi.mock('@/lib/spend-guard', () => ({
   guardModelCall: mocks.guardModelCall,
   spendGuardTextResponse: vi.fn(),
 }))
-vi.mock('@/lib/agents/studio-agent', () => ({
-  createStudioAgent: vi.fn(() => ({})),
-  studioTools: {},
-}))
+vi.mock('@/lib/agents/studio-agent', async () => {
+  const { tool } = await import('ai')
+  const { z } = await import('zod')
+  return {
+    createStudioAgent: vi.fn(() => ({})),
+    // Validation relabels calls to tools it does not know, so the history
+    // checks below need the tool they mention to exist.
+    studioTools: { writeOpenscad: tool({ inputSchema: z.object({ code: z.string() }) }) },
+  }
+})
 vi.mock('ai', async (importOriginal) => ({
   ...(await importOriginal<typeof import('ai')>()),
   createAgentUIStreamResponse: mocks.createAgentUIStreamResponse,
