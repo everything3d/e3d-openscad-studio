@@ -1,8 +1,8 @@
 /**
  * True for a message whose `parts` is an empty array.
  *
- * A model call that fails before producing anything (OpenRouter out of
- * credits, a provider outage) still ends the turn with an assistant message,
+ * A model call that fails before producing anything (the API account out
+ * of credits, a provider outage) still ends the turn with an assistant message,
  * just one with `parts: []`. The AI SDK rejects such a message when it is sent
  * back as history ("Message must contain at least one part"), so a single
  * failed turn used to break every later turn in that project.

@@ -1,7 +1,7 @@
 import { generateText, type UIMessage } from 'ai'
 import { z } from 'zod'
 import type { StarterDraft } from '../types'
-import { starterDraftModel } from '../ai/openrouter'
+import { shortTaskOptions, starterDraftModel } from '../ai/models'
 
 const draftSchema = z.object({
   title: z.string(),
@@ -64,6 +64,9 @@ export async function generateStarterDraft({
   try {
     const { text } = await generateText({
       model: starterDraftModel(),
+      providerOptions: shortTaskOptions,
+      // A short JSON object, plus headroom for thinking, which counts.
+      maxOutputTokens: 8_000,
       system: SYSTEM,
       prompt: `Current workspace name: ${name}\nFiles: ${fileNames.join(', ') || 'none'}\n\nCurrent OpenSCAD:\n${code.slice(0, 30_000)}\n\nRecent conversation:\n${textHistory(messages) || 'none'}`,
     })

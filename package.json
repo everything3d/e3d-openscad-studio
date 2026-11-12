@@ -15,7 +15,8 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
-    "@ai-sdk/react": "^4.0.23",
+    "@ai-sdk/anthropic": "^4.0.102",
+    "@ai-sdk/react": "^4.0.173",
     "@base-ui/react": "^1.6.0",
     "@clerk/nextjs": "^7.5.17",
     "@codemirror/commands": "^6.6.0",
@@ -23,10 +24,9 @@
     "@codemirror/state": "^6.4.1",
     "@codemirror/view": "^6.28.0",
     "@lezer/highlight": "^1.2.0",
-    "@openrouter/ai-sdk-provider": "^3.0.0",
     "@streamdown/code": "^1.1.1",
     "@vercel/analytics": "^2.0.1",
-    "ai": "^7.0.22",
+    "ai": "^7.0.169",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
