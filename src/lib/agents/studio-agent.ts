@@ -1,4 +1,10 @@
-import { ToolLoopAgent, isStepCount, type InferAgentUIMessage } from 'ai'
+import {
+  ToolLoopAgent,
+  isStepCount,
+  type InferAgentUIMessage,
+  type ModelMessage,
+  type SystemModelMessage,
+} from 'ai'
 import { studioModel, studioModelOptions } from '../ai/models'
 import { createWriteOpenscadTool } from '../tools/write-openscad'
 import { createReadOpenscadTool } from '../tools/read-openscad'
@@ -27,10 +33,22 @@ Rules:
 - Licensing and commercial use: when the user asks whether they may sell, print for customers, resell, or otherwise use commercially what they make here (or who owns it, or whether credit is needed), answer plainly and confidently without calling writeOpenscad: yes. Designs, code and exported STL/3MF files they create in E3D Studio are theirs, free for personal and commercial use, including selling prints and files, with no attribution or fee; Everything 3D waives any rights it might hold under CC0 1.0, and the starter designs are CC0 as well. Mention the one real limit only if relevant: the license cannot cover third-party content such as brand logos, characters or someone else's uploaded design, and fonts are open-licensed so lettering is fine. Link the full terms as [license page](/license).
 - For questions that don't change the model, just answer in text without calling writeOpenscad.`
 
+const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: 'ephemeral' as const } } }
+
+/** Mark the last of `messages` as a prompt-cache breakpoint, without mutating the input. */
+function withBreakpointOnLast<T extends ModelMessage>(messages: T[]): T[] {
+  if (messages.length === 0) return messages
+  const last = messages[messages.length - 1]
+  return [
+    ...messages.slice(0, -1),
+    { ...last, providerOptions: { ...last.providerOptions, ...CACHE_BREAKPOINT } },
+  ]
+}
+
 /**
  * Build the studio agent for one request. The current project source and
- * workspace file list change per request, so they're baked into the
- * instructions here rather than into a shared singleton. `currentCode` must
+ * workspace file list change per request, so they're built into the agent
+ * here rather than into a shared singleton. `currentCode` must
  * be the LIVE editor content sent by the client, not the (possibly stale)
  * DB row — the read/write tools share a source box seeded from it.
  */
@@ -40,31 +58,48 @@ export function createStudioAgent(
   modificationGuide?: string | null,
 ) {
   const source = { code: currentCode }
-  return new ToolLoopAgent({
-    // Override with STUDIO_MODEL for local testing (any Claude API model id).
-    model: studioModel(),
-    providerOptions: studioModelOptions(),
-    // Two system messages: the rules never change, so they (and the tool
-    // definitions before them) are marked as a prompt-cache prefix; the
-    // per-request source and file list follow, outside it.
-    instructions: [
-      {
-        role: 'system',
-        content: BASE_INSTRUCTIONS,
-        providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } },
-      },
-      {
-        role: 'system',
-        content:
-          `Current OpenSCAD source for this project:\n\n\`\`\`scad\n${currentCode}\n\`\`\`\n\n` +
+
+  // What changes from one request to the next. It is sent as a system message
+  // placed after the conversation so far, never in the instructions: anything
+  // that varies at the front of the prompt would stop the instructions, the
+  // tools and the whole history from being read from the prompt cache.
+  const liveState: SystemModelMessage = {
+    role: 'system',
+    content:
+      `Current OpenSCAD source for this project:\n\n\`\`\`scad\n${currentCode}\n\`\`\`\n\n` +
       (fileNames.length
         ? `Workspace files available to import(): ${fileNames.join(', ')}`
         : 'This project has no workspace files.') +
       (modificationGuide
         ? `\n\nDesign-specific guidance for this canonical version:\n${modificationGuide}`
         : ''),
-      },
-    ],
+  }
+
+  return new ToolLoopAgent({
+    // Override with STUDIO_MODEL for local testing (any Claude API model id).
+    model: studioModel(),
+    providerOptions: studioModelOptions(),
+    // Identical on every request, so it is cached together with the tools.
+    instructions: { role: 'system', content: BASE_INSTRUCTIONS, providerOptions: CACHE_BREAKPOINT },
+    allowSystemInMessages: true,
+    // Lay each step out as: history | live state | this request's own steps.
+    // The history breakpoint is what the next turn reads back; the trailing
+    // one lets each later step of this request reuse the steps before it.
+    prepareStep: ({ initialMessages, responseMessages }) => ({
+      messages: [
+        ...withBreakpointOnLast(initialMessages),
+        liveState,
+        ...withBreakpointOnLast(responseMessages),
+      ],
+    }),
+    onStepFinish: ({ usage }) => {
+      // Lets an operator confirm caching from the logs: after a project's
+      // first request, `read` should cover most of the input.
+      const { noCacheTokens, cacheReadTokens, cacheWriteTokens } = usage.inputTokenDetails
+      console.info(
+        `[studio-agent] input tokens: ${noCacheTokens ?? 0} uncached, ${cacheReadTokens ?? 0} cache read, ${cacheWriteTokens ?? 0} cache write; output: ${usage.outputTokens ?? 0}`,
+      )
+    },
     tools: {
       readOpenscad: createReadOpenscadTool(source),
       writeOpenscad: createWriteOpenscadTool(source),

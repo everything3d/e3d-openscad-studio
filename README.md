@@ -61,8 +61,9 @@ openscad-wasm worker     ──▶  binary STL  ──▶  three.js preview
 ```
 
 - **AI**: [AI SDK](https://ai-sdk.dev) `ToolLoopAgent` behind an API route, calling
-  the [Claude API](https://platform.claude.com) directly (`claude-opus-5-5` by
-  default). Model ids are configured in one place, `src/lib/ai/models.ts`, and
+  the [Claude API](https://platform.claude.com) directly (`claude-opus-5-5` for the
+  agent, `claude-haiku-5-5` for project names and starter metadata). The agent's
+  instructions, tools and conversation history are prompt-cached. Model ids are configured in one place, `src/lib/ai/models.ts`, and
   overridable per environment via `STUDIO_MODEL` / `NAMING_MODEL` /
   `STARTER_DRAFT_MODEL` with any current Claude model id. `STUDIO_EFFORT` sets how
   much the agent thinks (`low` to `max`, default `medium`). All calls are

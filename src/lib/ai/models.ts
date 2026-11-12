@@ -8,8 +8,11 @@ import { anthropic, type AnthropicLanguageModelOptions } from '@ai-sdk/anthropic
  * key surfaces as an error on the first model call rather than at boot.
  */
 
-/** The model behind every call unless an env var says otherwise. */
-const DEFAULT_MODEL = 'claude-opus-5-5'
+/** The modeling agent's model unless STUDIO_MODEL says otherwise. */
+const DEFAULT_STUDIO_MODEL = 'claude-opus-5-5'
+
+/** Names and starter metadata are short, simple text: the small, fast model. */
+const DEFAULT_SHORT_TASK_MODEL = 'claude-haiku-5-5'
 
 type Effort = NonNullable<AnthropicLanguageModelOptions['effort']>
 const EFFORTS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -19,12 +22,12 @@ const EFFORTS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
  * still carrying an OpenRouter-style id ("openai/gpt-…") from before the
  * switch would otherwise fail every request, so it falls back to the default.
  */
-function modelId(override: string | undefined): string {
+function modelId(override: string | undefined, fallback: string): string {
   const id = override?.trim()
-  if (!id) return DEFAULT_MODEL
+  if (!id) return fallback
   if (id.startsWith('claude-')) return id
-  console.warn(`[models] ignoring non-Claude model id "${id}", using ${DEFAULT_MODEL}`)
-  return DEFAULT_MODEL
+  console.warn(`[models] ignoring non-Claude model id "${id}", using ${fallback}`)
+  return fallback
 }
 
 function effortFrom(value: string | undefined, fallback: Effort): Effort {
@@ -37,7 +40,7 @@ function effortFrom(value: string | undefined, fallback: Effort): Effort {
  * attach reference photos and sketches). Override with STUDIO_MODEL.
  */
 export function studioModel() {
-  return anthropic(modelId(process.env.STUDIO_MODEL))
+  return anthropic(modelId(process.env.STUDIO_MODEL, DEFAULT_STUDIO_MODEL))
 }
 
 /**
@@ -48,8 +51,8 @@ export function studioModel() {
  *   move if that default does. Override with STUDIO_EFFORT.
  * - blockBinding: Opus 5.5 ties each thinking block to everything sent before
  *   it and rejects the request if that prefix changed. Ours changes by design:
- *   the live editor source is part of the instructions, and old inspection
- *   pictures are stripped from history. `drop_block` has the API discard the
+ *   the live editor source is re-sent fresh on every request, and old
+ *   inspection pictures are stripped from history. `drop_block` has the API discard the
  *   thinking it can no longer verify instead of failing the turn.
  * - fallbacks: if a safety classifier declines a request, the API retries it
  *   on Anthropic's recommended fallback model within the same call.
@@ -66,7 +69,7 @@ export function studioModelOptions() {
 
 /** The project-naming model — one short line of text. Override with NAMING_MODEL. */
 export function namingModel() {
-  return anthropic(modelId(process.env.NAMING_MODEL))
+  return anthropic(modelId(process.env.NAMING_MODEL, DEFAULT_SHORT_TASK_MODEL))
 }
 
 /**
@@ -74,7 +77,9 @@ export function namingModel() {
  * short, structured tasks. Override with STARTER_DRAFT_MODEL.
  */
 export function starterDraftModel() {
-  return anthropic(modelId(process.env.STARTER_DRAFT_MODEL ?? process.env.NAMING_MODEL))
+  return anthropic(
+    modelId(process.env.STARTER_DRAFT_MODEL ?? process.env.NAMING_MODEL, DEFAULT_SHORT_TASK_MODEL),
+  )
 }
 
 /** Naming and starter drafts are short, simple tasks: think as little as possible. */
